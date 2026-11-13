@@ -1,7 +1,3 @@
-"""CLI утилиты агрегатора.
-
-Запуск внутри контейнера backend: `python -m src.aggregator.cli <команда>`.
-"""
 
 import argparse
 import asyncio

@@ -1,13 +1,3 @@
-"""Telegram сборщик на Telethon.
-
-Группирует альбомы по grouped_id (копит все сообщения одной группы перед
-тем как считать альбом завершённым — не полагается на первое полученное
-сообщение и учитывает границу страниц истории), сохраняет фото/видео в
-исходном порядке, обрабатывает FloodWait и временные ошибки повторами.
-
-Курсор новых сообщений (incremental) и курсор загрузки истории (backfill)
-хранятся раздельно через CursorRepository.
-"""
 
 import asyncio
 import logging
@@ -24,17 +14,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CollectedPost:
     external_id: str
-    """ID последнего (или единственного) сообщения альбома/поста — стабилен
-    для одной публикации, т.к. альбом всегда группируется целиком."""
     all_message_ids: list[int]
     text: str
     published_at: datetime
     edited_at: datetime | None
     original_url: str
     media_refs: list[tuple[str, str]]
-    """[(source_ref, media_type)]. source_ref — стабильная строка вида
-    'channel_id:message_id:media_index', позволяющая повторно скачать
-    вложение через Telethon, даже если прямой URL не хранится."""
     reactions_count: int | None
     comments_count: int | None
     forwarded_from_url: str | None
@@ -57,11 +42,6 @@ class TelegramCollector:
         max_id: int = 0,
         reverse: bool = False,
     ):
-        """Итерирует сообщения, группируя альбомы по grouped_id. Границы
-        страниц Telethon учитываются встроенным итератором (iter_messages
-        сам пагинирует), группировка происходит на уровне выдачи наружу:
-        сообщения одного grouped_id копятся, пока не встретится сообщение с
-        другим grouped_id или None (альбом считается закрытым только тогда)."""
 
         pending_group: list[Message] = []
         pending_group_id: int | None = None

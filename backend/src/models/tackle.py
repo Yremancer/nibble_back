@@ -26,7 +26,6 @@ class TackleCategory(Base):
 
 
 class TackleLink(Base):
-    """Ссылка на отфильтрованную выдачу Фарпоста, а не на одно объявление."""
 
     __tablename__ = "tackle_links"
 

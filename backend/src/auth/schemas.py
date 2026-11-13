@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -9,7 +8,6 @@ from pydantic import (
     SecretStr,
     StringConstraints,
 )
-from src.models.user import UserRole
 from src.settings import settings
 
 
@@ -33,15 +31,3 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
-
-
-class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    email: EmailStr
-    display_name: str
-    city_id: int
-    role: UserRole
-    avatar_url: str | None
-    created_at: datetime

@@ -1,6 +1,3 @@
-"""Сценарий 5: служебный хвост не превращает отчёт в рекламу — проверяем,
-что normalize/text корректно вырезает боилерплейт ulov25r и не трогает
-произвольные ссылки/контакты в других публикациях (см. ТЗ, раздел 8)."""
 
 from src.aggregator.config import NormalizationRule
 from src.aggregator.normalize.text import (
@@ -36,8 +33,6 @@ def test_boilerplate_is_removed_and_preserved_separately():
 
 
 def test_arbitrary_links_not_removed_without_matching_rule():
-    """Публикация о происшествии со ссылкой/контактом не должна лишиться
-    текста из-за общего правила другого источника."""
     raw_text = "ЧП на льду бухты, спасатели МЧС: +7-900-000-00-00, подробности t.me/news/123"
 
     cleaned, removed = strip_boilerplate(raw_text, [ULOV25R_RULE])

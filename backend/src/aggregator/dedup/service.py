@@ -1,16 +1,3 @@
-"""Дедупликация между публикациями разных источников.
-
-Уровни (см. ТЗ, раздел 11):
-1. Явная пересылка/ссылка на оригинал.
-2. Точный хеш нормализованного текста.
-3. Совпадение медиа (sha256 файлов).
-4. Похожий текст (pg_trgm) + доп. признаки (место, дата, набор фото).
-5. DeepSeek для спорных пар (не реализован в этой версии — попадает в review).
-
-Кандидаты отбираются средствами БД (pg_trgm + временное окно), не полным
-перебором через LLM. Слабые совпадения A-B и B-C не объединяют кластер
-автоматически: каждое решение — отдельная запись agg_dedup_decisions.
-"""
 
 from datetime import timedelta
 
@@ -45,7 +32,6 @@ class DedupService:
     async def find_exact_duplicate(
         self, content_hash_value: str, exclude_raw_item_id: int
     ) -> AggRawItem | None:
-        """Уровень 2: точный хеш нормализованного текста в окне времени."""
         result = await self._session.execute(
             select(AggRawItem)
             .join(AggContentVersion, AggContentVersion.raw_item_id == AggRawItem.id)
@@ -63,8 +49,6 @@ class DedupService:
     async def find_text_candidates(
         self, normalized_text: str, exclude_raw_item_id: int, published_at
     ) -> list[DedupCandidate]:
-        """Уровень 4: pg_trgm similarity на уже опубликованных постах в
-        ограниченном временном окне — не полный перебор базы."""
         if not normalized_text or len(normalized_text) < 20:
             return []
 
@@ -105,10 +89,6 @@ class DedupService:
     async def find_media_sha_overlap(
         self, media_file_ids: list[int], exclude_raw_item_id: int
     ) -> list[int]:
-        """Уровень 3: пересечение по sha256 медиафайлов (уже сведено к
-        media_file_id на этапе загрузки). Одной общей фотографии недостаточно
-        для решения — это только признак, финальное решение комбинирует его
-        с текстовым сходством."""
         if not media_file_ids:
             return []
         query = text(

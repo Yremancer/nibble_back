@@ -1,8 +1,3 @@
-"""Первичная авторизация Telegram-сессии (отдельная команда `auth telegram`).
-
-Код/пароль 2FA вводятся интерактивно в терминале и никогда не логируются.
-Файл сессии хранится локально по TELEGRAM_SESSION_PATH (не в git — путь по
-умолчанию вне репозитория/в volume)."""
 
 from telethon import TelegramClient
 from src.aggregator.config import aggregator_settings

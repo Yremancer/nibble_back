@@ -5,6 +5,7 @@ from src.depth.router import router as depth_router
 from src.species.router import router as species_router
 from src.spot.router import router as spot_router
 from src.storage.router import router as storage_router
+from src.user.router import router as user_router
 from src.weather.router import router as weather_router
 
 api_controller = APIRouter()
@@ -14,4 +15,5 @@ api_controller.include_router(depth_router)
 api_controller.include_router(species_router)
 api_controller.include_router(spot_router)
 api_controller.include_router(storage_router)
+api_controller.include_router(user_router)
 api_controller.include_router(weather_router)

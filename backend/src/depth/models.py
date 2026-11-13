@@ -17,7 +17,6 @@ from src.database.base import Base
 
 
 class DepthLayer(Base):
-    """Зона глубин города: GeoJSON MultiPolygon от depth_from до depth_to метров."""
 
     __tablename__ = "depth_layers"
     __table_args__ = (

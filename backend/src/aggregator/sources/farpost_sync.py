@@ -1,11 +1,3 @@
-"""Оркестрация обхода Фарпоста: постраничный список -> детальная карточка
--> запись в listings + медиа-вложения.
-
-Прогресс обхода (номер страницы) хранится в agg_cursors (source_key=
-'farpost'), чтобы большой каталог продолжался с контрольной точки, а не
-начинался заново при каждом запуске (см. ТЗ, раздел 12). 403/сетевые ошибки
-останавливают текущий прогон с диагностикой, не помечая объявления снятыми.
-"""
 
 import asyncio
 import logging
@@ -21,7 +13,7 @@ from src.aggregator.repository import (
     TaskRepository,
 )
 from src.aggregator.sources.farpost_collector import FarpostCollector, FarpostHttpError
-from src.models.geo import City
+from src.city.models import City
 from src.models.listing import ListingState
 from src.models.tackle import TackleCategory
 

@@ -35,8 +35,6 @@ class PostStatus(StrEnum):
 
 
 class PostKind(StrEnum):
-    """Расширение модели: posts в PDF описан только как отчёт об улове,
-    но агрегатор также собирает происшествия и полезную информацию."""
 
     FISHING_REPORT = "fishing_report"
     INCIDENT = "incident"
@@ -98,26 +96,17 @@ class Post(Base):
     kind: Mapped[str] = mapped_column(
         String(20), server_default=sql_text("'fishing_report'")
     )
-    """Тип публикации: отчёт об улове, происшествие или полезная информация.
-    Расширение модели из PDF (там posts = только отчёт об улове)."""
 
     event_date: Mapped[date | None] = mapped_column(Date)
-    """Дата происшествия/события для kind=incident. Не путать с fishing_date."""
 
     tg_reactions_count: Mapped[int | None] = mapped_column(Integer)
     tg_comments_count: Mapped[int | None] = mapped_column(Integer)
-    """Счётчики реакций/комментариев источника (Telegram), отдельно от
-    likes_count/comments_count сервиса: импорт не должен перезаписывать
-    локальные взаимодействия пользователей."""
 
     canonical_post_id: Mapped[int | None] = mapped_column(
         ForeignKey("posts.id", ondelete="SET NULL"), index=True
     )
-    """Если пост объединён как дубль, указывает на каноническую публикацию."""
 
     managed_fields: Mapped[dict | None] = mapped_column(JSONB)
-    """Владение полями при повторном импорте: какие поля зафиксированы
-    модератором вручную и не должны перезаписываться источником."""
 
     source: Mapped["Source"] = relationship()
     author: Mapped["User | None"] = relationship()  # noqa: F821

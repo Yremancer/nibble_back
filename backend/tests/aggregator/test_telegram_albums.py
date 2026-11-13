@@ -1,5 +1,3 @@
-"""Сценарии 3 и 4: альбом собирается в один пост даже на границе страниц,
-порядок фото/видео сохраняется."""
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -48,9 +46,6 @@ def _fake_iter_messages(messages):
 
 @pytest.mark.asyncio
 async def test_album_across_page_boundary_becomes_one_post():
-    """Имитирует альбом из 3 сообщений, где границы Telethon-пагинации
-    могли бы разорвать выдачу: все 3 приходят подряд с одним grouped_id,
-    затем отдельное одиночное сообщение — должно получиться ровно 2 поста."""
     messages = [
         _make_message(10, grouped_id=777, media_type="photo", text="Отчёт с фото"),
         _make_message(11, grouped_id=777, media_type="video"),
@@ -86,8 +81,6 @@ async def test_album_across_page_boundary_becomes_one_post():
 
 @pytest.mark.asyncio
 async def test_post_without_caption_is_not_lost():
-    """Сценарий 7: публикация без текста (только медиа) должна попасть в
-    CollectedPost, а не быть пропущена сборщиком."""
     messages = [_make_message(20, grouped_id=None, media_type="photo", text="")]
 
     client = MagicMock()
