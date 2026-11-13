@@ -122,6 +122,7 @@ class Post(Base):
     source: Mapped["Source"] = relationship()
     author: Mapped["User | None"] = relationship()  # noqa: F821
     spot: Mapped["Spot | None"] = relationship()  # noqa: F821
+    method: Mapped["FishingMethod | None"] = relationship()  # noqa: F821
     media: Mapped[list["PostMedia"]] = relationship(  # noqa: F821
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -143,6 +144,8 @@ class PostSpecies(Base):
     )
     quantity: Mapped[int | None] = mapped_column(SmallInteger)
     max_weight_g: Mapped[int | None] = mapped_column(Integer)
+
+    species: Mapped["Species"] = relationship()  # noqa: F821
 
 
 class PostLike(Base):
