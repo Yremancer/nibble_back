@@ -1,0 +1,23 @@
+{
+  "telegram": [
+    {
+      "name": "Рыбалка 25 регион",
+      "channel": "ulov25r",
+      "city_id": null,
+      "is_active": true
+    },
+    {
+      "name": "nhnc125",
+      "channel": "nhnc125",
+      "city_id": null,
+      "is_active": true
+    }
+  ],
+  "normalization": {
+    "ulov25r": [
+      {
+        "pattern": "Рыболовные места.*?Купи-продай.*?Группа общение.*?(пришл(и|ите) (свой )?отчёт.*)?$"
+      }
+    ]
+  }
+}

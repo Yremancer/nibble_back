@@ -15,6 +15,7 @@ from sqlalchemy import (
     func,
     text as sql_text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.base import Base, enum_check
 
@@ -29,6 +30,15 @@ class PostStatus(StrEnum):
     PUBLISHED = "published"
     HIDDEN = "hidden"
     MODERATION = "moderation"
+
+
+class PostKind(StrEnum):
+    """Расширение модели: posts в PDF описан только как отчёт об улове,
+    но агрегатор также собирает происшествия и полезную информацию."""
+
+    FISHING_REPORT = "fishing_report"
+    INCIDENT = "incident"
+    USEFUL_INFO = "useful_info"
 
 
 class Source(Base):
@@ -51,6 +61,7 @@ class Post(Base):
     __tablename__ = "posts"
     __table_args__ = (
         enum_check("status", PostStatus),
+        enum_check("kind", PostKind),
         UniqueConstraint("source_id", "external_post_id"),
     )
 
@@ -82,28 +93,41 @@ class Post(Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
 
+    kind: Mapped[str] = mapped_column(
+        String(20), server_default=sql_text("'fishing_report'")
+    )
+    """Тип публикации: отчёт об улове, происшествие или полезная информация.
+    Расширение модели из PDF (там posts = только отчёт об улове)."""
+
+    event_date: Mapped[date | None] = mapped_column(Date)
+    """Дата происшествия/события для kind=incident. Не путать с fishing_date."""
+
+    tg_reactions_count: Mapped[int | None] = mapped_column(Integer)
+    tg_comments_count: Mapped[int | None] = mapped_column(Integer)
+    """Счётчики реакций/комментариев источника (Telegram), отдельно от
+    likes_count/comments_count сервиса: импорт не должен перезаписывать
+    локальные взаимодействия пользователей."""
+
+    canonical_post_id: Mapped[int | None] = mapped_column(
+        ForeignKey("posts.id", ondelete="SET NULL"), index=True
+    )
+    """Если пост объединён как дубль, указывает на каноническую публикацию."""
+
+    managed_fields: Mapped[dict | None] = mapped_column(JSONB)
+    """Владение полями при повторном импорте: какие поля зафиксированы
+    модератором вручную и не должны перезаписываться источником."""
+
     source: Mapped["Source"] = relationship()
     author: Mapped["User | None"] = relationship()  # noqa: F821
     spot: Mapped["Spot | None"] = relationship()  # noqa: F821
-    photos: Mapped[list["PostPhoto"]] = relationship(
+    media: Mapped[list["PostMedia"]] = relationship(  # noqa: F821
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="PostPhoto.sort_order",
+        order_by="PostMedia.sort_order",
     )
     catches: Mapped[list["PostSpecies"]] = relationship(
         cascade="all, delete-orphan", passive_deletes=True
     )
-
-
-class PostPhoto(Base):
-    __tablename__ = "post_photos"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    post_id: Mapped[int] = mapped_column(
-        ForeignKey("posts.id", ondelete="CASCADE"), index=True
-    )
-    url: Mapped[str] = mapped_column(Text)
-    sort_order: Mapped[int] = mapped_column(SmallInteger, server_default=sql_text("0"))
 
 
 class PostSpecies(Base):

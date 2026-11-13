@@ -1,9 +1,18 @@
 from src.models.geo import City, DepthLayer, Spot
+from src.models.listing import (
+    Listing,
+    ListingMedia,
+    ListingMediaType,
+    ListingPriceHistory,
+    ListingRecommendation,
+    ListingState,
+)
+from src.models.media import MediaType, PostMedia
 from src.models.post import (
     Comment,
     Post,
+    PostKind,
     PostLike,
-    PostPhoto,
     PostSpecies,
     PostStatus,
     Source,
@@ -19,15 +28,25 @@ from src.models.species import (
 )
 from src.models.tackle import TackleCategory, TackleLink, TackleRecommendation
 from src.models.user import Subscription, User, UserRole
+from src.storage.models import File
 
 __all__ = [
     "City",
     "Comment",
     "DepthLayer",
     "FishingMethod",
+    "File",
+    "Listing",
+    "ListingMedia",
+    "ListingMediaType",
+    "ListingPriceHistory",
+    "ListingRecommendation",
+    "ListingState",
+    "MediaType",
     "Post",
+    "PostKind",
     "PostLike",
-    "PostPhoto",
+    "PostMedia",
     "PostSpecies",
     "PostStatus",
     "Source",

@@ -1,0 +1,124 @@
+"""Запуск синхронизации Telegram: поддерживает incremental (sync) и
+backfill (backfill --since) режимы с раздельными курсорами.
+
+shortcut: один процесс на файл сессии, без файловой блокировки — если нужно
+запускать несколько источников параллельно, завести отдельные сессии на
+канал. Upgrade: добавить lock-файл или семафор в БД при реальной
+конкурентности.
+"""
+
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from telethon import TelegramClient
+from src.aggregator.config import (
+    NormalizationRule,
+    SourcesConfig,
+    TelegramSourceConfig,
+    aggregator_settings,
+)
+from src.aggregator.pipeline.ingest import ingest_telegram_post
+from src.aggregator.repository import CursorRepository
+from src.aggregator.sources.telegram_collector import TelegramCollector
+from src.models.post import Source, SourceType
+
+logger = logging.getLogger(__name__)
+
+PARSER_VERSION = "telegram_v1"
+
+
+async def ensure_source(session: AsyncSession, cfg: TelegramSourceConfig, channel_id: int) -> Source:
+    external_id = str(channel_id)
+    result = await session.execute(
+        select(Source).where(
+            Source.type == SourceType.TELEGRAM.value, Source.external_id == external_id
+        )
+    )
+    source = result.scalar_one_or_none()
+    if source is None:
+        source = Source(
+            type=SourceType.TELEGRAM.value,
+            name=cfg.name,
+            url=f"https://t.me/{cfg.channel}",
+            external_id=external_id,
+            city_id=cfg.city_id,
+            is_active=cfg.is_active,
+        )
+        session.add(source)
+        await session.flush()
+    return source
+
+
+async def sync_telegram_source(
+    session: AsyncSession,
+    client: TelegramClient,
+    cfg: TelegramSourceConfig,
+    sources_config: SourcesConfig,
+    *,
+    mode: str,
+    since: datetime | None,
+    limit: int | None,
+) -> dict:
+    collector = TelegramCollector(client, cfg.channel)
+    channel_id = await collector.resolve_channel_id()
+    source = await ensure_source(session, cfg, channel_id)
+
+    source_key = f"telegram:{channel_id}"
+    cursor_repo = CursorRepository(session)
+    boilerplate_rules = [
+        NormalizationRule.model_validate(r.model_dump())
+        for r in sources_config.normalization.get(cfg.channel, [])
+    ]
+
+    stats = {"fetched": 0, "created": 0, "updated": 0, "errors": 0}
+
+    cursor_type = "backfill" if mode == "backfill" else "incremental"
+    cursor = await cursor_repo.get(source_key, cursor_type)
+    min_id = cursor.get("last_message_id", 0) if cursor else 0
+
+    reverse = mode == "backfill"
+    max_processed_id = min_id
+    count = 0
+
+    async for collected in collector.iter_history(min_id=min_id, reverse=reverse):
+        if since is not None and collected.published_at < since and mode == "backfill":
+            continue
+        if limit is not None and count >= limit:
+            break
+        count += 1
+        stats["fetched"] += 1
+
+        try:
+            raw_item_id, changed, is_new = await ingest_telegram_post(
+                session,
+                source_key=source_key,
+                external_id=collected.external_id,
+                raw_payload={
+                    **collected.raw_payload,
+                    "source_id": source.id,
+                    "external_post_id": collected.external_id,
+                },
+                raw_text=collected.text,
+                media_refs=collected.media_refs,
+                boilerplate_rules=boilerplate_rules,
+                parser_version=PARSER_VERSION,
+            )
+            if changed:
+                stats["created" if is_new else "updated"] += 1
+
+            max_processed_id = max(max_processed_id, max(collected.all_message_ids))
+        except Exception:
+            logger.exception("ingest failed for telegram post %s", collected.external_id)
+            stats["errors"] += 1
+
+    if max_processed_id > min_id:
+        await cursor_repo.set(
+            source_key, cursor_type, {"last_message_id": max_processed_id}
+        )
+
+    source.last_synced_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    return stats
