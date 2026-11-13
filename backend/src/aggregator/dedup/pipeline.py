@@ -9,9 +9,10 @@
 
 from dataclasses import dataclass
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.dedup.service import DedupService
-from src.aggregator.models import DedupDecisionKind
+from src.aggregator.models import AggDedupDecision, DedupDecisionKind
 
 _HIGH_TEXT_SIMILARITY_FOR_AUTO = 0.85
 
@@ -33,9 +34,13 @@ async def resolve_duplicate(
     media_file_ids: list[int],
 ) -> DedupOutcome:
     service = DedupService(session)
+    await session.execute(delete(AggDedupDecision).where(
+        AggDedupDecision.item_a_id == raw_item_id,
+    ))
 
-    exact = await service.find_exact_duplicate(content_hash_value, raw_item_id)
-    if exact is not None:
+    exact = await service.find_exact_duplicate(normalized_text, raw_item_id) if normalized_text.strip() else None
+    media_overlap_ids = await service.find_media_sha_overlap(media_file_ids, raw_item_id)
+    if exact is not None and (len(normalized_text.strip()) >= 20 or exact.id in media_overlap_ids):
         await service.record_decision(
             raw_item_id,
             exact.id,
@@ -49,13 +54,10 @@ async def resolve_duplicate(
     candidates = await service.find_text_candidates(
         normalized_text, raw_item_id, published_at
     )
-    if not candidates:
-        return DedupOutcome(False, None, False, "no_candidates")
-
-    media_overlap_ids = await service.find_media_sha_overlap(media_file_ids, raw_item_id)
-
-    best = candidates[0]
-    if best.similarity >= _HIGH_TEXT_SIMILARITY_FOR_AUTO and media_overlap_ids:
+    best = next((c for c in candidates
+                 if c.similarity >= _HIGH_TEXT_SIMILARITY_FOR_AUTO
+                 and c.raw_item_id in media_overlap_ids), None)
+    if best is not None:
         await service.record_decision(
             raw_item_id,
             best.raw_item_id,
@@ -76,4 +78,13 @@ async def resolve_duplicate(
             features={"similarity": candidate.similarity},
         )
 
-    return DedupOutcome(False, None, True, "uncertain_candidates")
+    if exact is not None or media_overlap_ids:
+        for candidate_id in set(media_overlap_ids + ([exact.id] if exact is not None else [])):
+            await service.record_decision(
+                raw_item_id, candidate_id, level=3,
+                decision=DedupDecisionKind.UNCERTAIN,
+                reason="совпадение медиа или короткого текста требует проверки",
+                features={"media_overlap": media_overlap_ids},
+            )
+    needs_review = bool(candidates or exact is not None or media_overlap_ids)
+    return DedupOutcome(False, None, needs_review, "uncertain_candidates" if needs_review else "no_candidates")

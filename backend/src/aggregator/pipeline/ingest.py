@@ -36,7 +36,10 @@ async def ingest_telegram_post(
         kind=RawItemKind.TELEGRAM_POST.value,
         source_key=source_key,
         external_id=external_id,
-        raw_payload={**raw_payload, "text": raw_text, "media_refs": [list(ref) for ref in media_refs]},
+        raw_payload={
+            **raw_payload, "text": raw_text, "media_refs": [list(ref) for ref in media_refs],
+            "normalization_rules": [rule.model_dump() for rule in boilerplate_rules],
+        },
         content_hash=content_hash(normalize_for_hash(raw_text)),
         parser_version=parser_version,
     )
@@ -54,7 +57,4 @@ async def ingest_telegram_post(
         # вызов): дальше в очередь ставится только classify, т.к. сбой
         # внешних сервисов (DeepSeek/S3) не должен блокировать ingest.
         await normalize_raw_item(session, item.id, raw_text, boilerplate_rules)
-    elif await attachments_repo.pending_for_item(item.id):
-        await TaskRepository(session).enqueue(item.id, ProcessingStage.MEDIA)
-
     return item.id, changed, is_new

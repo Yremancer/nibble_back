@@ -10,6 +10,7 @@ from telethon.tl.types import MessageMediaDocument, MessageMediaPhoto
 from src.aggregator.media import MediaService
 from src.aggregator.models import AggProcessingTask, AggRawItem, ProcessingStage
 from src.aggregator.pipeline.ingest import ingest_telegram_post
+from src.aggregator.pipeline.dedup_stage import process_dedup_tasks
 from src.aggregator.pipeline.media_stage import process_media_tasks
 from src.aggregator.pipeline.publish_stage import process_publish_tasks
 from src.aggregator.repository import (
@@ -108,6 +109,7 @@ async def test_album_upload_retry_after_publish_replace_and_remove(session, monk
     refs = [("media_test:1:20", "photo"), ("media_test:2:30", "video"), ("media_test:3:40", "photo")]
     item_id = await ingest(session, source.id, refs)
     assert await process_media_tasks(session, service, 10) == {"done": 0, "failed": 1}
+    await process_dedup_tasks(session, 10)
     assert await process_publish_tasks(session, 10) == {"done": 1, "failed": 0}
     item = await session.get(AggRawItem, item_id)
     post_id = item.post_id
@@ -122,6 +124,7 @@ async def test_album_upload_retry_after_publish_replace_and_remove(session, monk
     task.available_at = datetime.now(timezone.utc)
     await session.flush()
     assert await process_media_tasks(session, service, 10) == {"done": 1, "failed": 0}
+    await process_dedup_tasks(session, 10)
     assert await process_publish_tasks(session, 10) == {"done": 1, "failed": 0}
     current_links = await links(session, post_id)
     assert [link.type for link in current_links] == ["photo", "video", "photo"]
@@ -140,6 +143,7 @@ async def test_album_upload_retry_after_publish_replace_and_remove(session, monk
     attachments = await MediaAttachmentRepository(session).all_for_item(item_id)
     assert [a.download_state for a in attachments] == ["pending", "uploaded"]
     assert await process_media_tasks(session, service, 10) == {"done": 1, "failed": 0}
+    await process_dedup_tasks(session, 10)
     assert await process_publish_tasks(session, 10) == {"done": 1, "failed": 0}
     current_links = await links(session, post_id)
     assert len(current_links) == 2
@@ -148,6 +152,7 @@ async def test_album_upload_retry_after_publish_replace_and_remove(session, monk
 
     await ingest(session, source.id, [], text="Изменённый текст без фото")
     await process_media_tasks(session, service, 10)
+    await process_dedup_tasks(session, 10)
     assert await process_publish_tasks(session, 10) == {"done": 1, "failed": 0}
     assert await links(session, post_id) == []
     assert (await session.get(Post, post_id)).text == "Изменённый текст без фото"

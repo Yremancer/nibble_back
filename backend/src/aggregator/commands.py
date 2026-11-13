@@ -2,6 +2,7 @@
 закрывает внешние клиенты по завершении, чтобы `doctor`/`sync` можно было
 запускать независимо друг от друга."""
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -9,9 +10,10 @@ from pathlib import Path
 
 import httpx
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.config import aggregator_settings, load_sources_config
 from src.aggregator.models import ProcessingStage
-from src.database.database import async_session_maker
+from src.database.database import async_session_maker, engine
 from src.llm.client import DeepSeekClient
 from src.llm.settings import llm_settings
 from src.models.listing import Listing
@@ -37,10 +39,11 @@ async def cmd_auth_telegram() -> None:
 
 
 _PIPELINE_STAGES = [
+    ProcessingStage.NORMALIZE,
     ProcessingStage.CLASSIFY,
     ProcessingStage.RESOLVE,
-    ProcessingStage.DEDUP,
     ProcessingStage.MEDIA,
+    ProcessingStage.DEDUP,
     ProcessingStage.PUBLISH,
 ]
 
@@ -49,13 +52,73 @@ async def _drain_pipeline(limit_per_stage: int = 200) -> dict:
     """Прогоняет очередь задач по всем этапам после ingest. Каждый этап
     независим: сбой DeepSeek/S3 на одной публикации не останавливает
     остальные и не теряет задачу (она останется pending/failed)."""
+    from src.aggregator.repository import TaskRepository
+
+    async with async_session_maker() as session:
+        await TaskRepository(session).enqueue_missing_media()
+        await session.commit()
     stats = {}
-    for stage in _PIPELINE_STAGES:
-        stats[stage.value] = await _run_stage(stage, limit_per_stage)
-    return stats
+    while True:
+        processed = 0
+        for stage in _PIPELINE_STAGES:
+            batch = await _drain_stage(stage, limit_per_stage)
+            total = stats.setdefault(stage.value, {})
+            for key, value in batch.items():
+                total[key] = total.get(key, 0) + value
+                processed += value
+        if not processed:
+            return stats
 
 
-async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool) -> None:
+async def _drain_stage(stage: ProcessingStage, batch_size: int) -> dict:
+    if batch_size <= 0:
+        raise ValueError("размер пакета должен быть положительным")
+    total = {}
+    while True:
+        batch = await _run_stage(stage, batch_size)
+        for key, value in batch.items():
+            total[key] = total.get(key, 0) + value
+        if not any(batch.values()):
+            return total
+
+
+def _has_errors(stats: dict) -> bool:
+    return bool(stats.get("failed") or stats.get("errors") or stats.get("error")) or any(
+        _has_errors(value) for value in stats.values() if isinstance(value, dict)
+    )
+
+
+@asynccontextmanager
+async def command_run(source_key: str, command: str):
+    from src.aggregator.repository import RunRepository
+
+    async with engine.connect() as connection:
+        locked = await connection.scalar(text("SELECT pg_try_advisory_lock(731912, 2)"))
+        await connection.commit()
+        if not locked:
+            raise RuntimeError("другая команда агрегатора уже выполняется")
+        try:
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                repo = RunRepository(session)
+                await repo.interrupt_running()
+                run = await repo.start(source_key, command)
+                await session.commit()
+                stats = {}
+                try:
+                    yield stats
+                except BaseException as exc:
+                    await repo.finish(run, "failed", stats, str(exc) or type(exc).__name__)
+                    await session.commit()
+                    raise
+                else:
+                    await repo.finish(run, "failed" if _has_errors(stats) else "success", stats)
+                    await session.commit()
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(731912, 2)"))
+            await connection.commit()
+
+
+async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool) -> dict:
     stats_all = {}
     if source in ("all", "telegram"):
         stats_all["telegram"] = await _run_telegram_sync(mode="sync", since=None, limit=limit)
@@ -64,9 +127,10 @@ async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: b
     if not dry_run:
         stats_all["pipeline"] = await _drain_pipeline()
     print(json.dumps(stats_all, ensure_ascii=False, indent=2, default=str))
+    return stats_all
 
 
-async def cmd_backfill(source: str, since, limit: int | None, pages: int | None) -> None:
+async def cmd_backfill(source: str, since, limit: int | None, pages: int | None) -> dict:
     if source == "telegram":
         stats = await _run_telegram_sync(mode="backfill", since=since, limit=limit)
     elif source == "farpost":
@@ -80,6 +144,7 @@ async def cmd_backfill(source: str, since, limit: int | None, pages: int | None)
         stats = {"ingest": stats, "pipeline": await _drain_pipeline()}
 
     print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+    return stats
 
 
 async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
@@ -155,24 +220,65 @@ async def _run_fishing_vl_sync(limit: int | None) -> dict:
     return stats
 
 
-async def cmd_reprocess(stage: str, limit: int) -> None:
-    stats = await _run_stage(ProcessingStage(stage), limit)
+async def cmd_reprocess(stage: str, limit: int) -> dict:
+    from src.aggregator.repository import TaskRepository
+
+    if limit <= 0:
+        raise ValueError("лимит должен быть положительным")
+    selected_stage = ProcessingStage(stage)
+    async with async_session_maker() as session:
+        requeued = await TaskRepository(session).requeue_stage(selected_stage, limit)
+        await session.commit()
+    stats = {"requeued": requeued, "pipeline": await _drain_pipeline()}
     print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
 
 
-async def cmd_retry_failed(stage: str, limit: int) -> None:
+async def cmd_retry_failed(stage: str, limit: int) -> dict:
     from src.aggregator.repository import TaskRepository
 
     async with async_session_maker() as session:
         tasks_repo = TaskRepository(session)
         requeued = await tasks_repo.claim_failed(ProcessingStage(stage), limit)
         await session.commit()
-    print(json.dumps({"requeued": len(requeued)}, ensure_ascii=False, indent=2))
+    stats = {"requeued": len(requeued), "pipeline": await _drain_pipeline()}
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
+
+
+async def cmd_worker() -> None:
+    from src.aggregator.repository import TaskRepository
+
+    first_pass = True
+    while True:
+        try:
+            async with async_session_maker() as session:
+                ready = await TaskRepository(session).has_ready()
+            if ready or first_pass:
+                async with command_run("pipeline", "worker") as stats:
+                    stats.update(await _drain_pipeline())
+                first_pass = False
+        except Exception:
+            logger.exception("pipeline worker pass failed")
+        await asyncio.sleep(5)
 
 
 async def _run_stage(stage: ProcessingStage, limit: int) -> dict:
+    from src.aggregator.repository import TaskRepository
+
     async with async_session_maker() as session:
-        if stage == ProcessingStage.CLASSIFY:
+        if not await TaskRepository(session).has_ready(stage):
+            stats = {"done": 0, "failed": 0}
+            if stage == ProcessingStage.CLASSIFY:
+                stats["skipped"] = 0
+            elif stage == ProcessingStage.DEDUP:
+                stats["duplicates"] = 0
+            return stats
+        if stage == ProcessingStage.NORMALIZE:
+            from src.aggregator.pipeline.normalize_stage import process_normalize_tasks
+
+            stats = await process_normalize_tasks(session, limit)
+        elif stage == ProcessingStage.CLASSIFY:
             from src.aggregator.pipeline.classify import process_classify_tasks
 
             async with _http_client() as http_client:
@@ -212,7 +318,7 @@ async def _run_stage(stage: ProcessingStage, limit: int) -> dict:
 
             stats = await process_publish_tasks(session, limit)
         else:
-            stats = {"error": f"этап {stage} не поддерживает ручной запуск напрямую"}
+            raise ValueError(f"этап {stage} не поддерживает ручной запуск напрямую")
 
         await session.commit()
     return stats

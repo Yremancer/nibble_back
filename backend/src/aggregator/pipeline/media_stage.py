@@ -7,7 +7,7 @@ import logging
 from urllib.parse import urlsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.aggregator.models import ProcessingStage
+from src.aggregator.models import AggRawItem, ProcessingStage
 from src.aggregator.repository import MediaAttachmentRepository, TaskRepository
 from src.aggregator.media import MediaService
 
@@ -20,7 +20,7 @@ async def process_media_tasks(
     tasks_repo = TaskRepository(session)
     attachments_repo = MediaAttachmentRepository(session)
 
-    tasks = await tasks_repo.claim_pending(ProcessingStage.MEDIA, limit, retry_failed=True)
+    tasks = await tasks_repo.claim_pending(ProcessingStage.MEDIA, limit)
     done = failed = 0
 
     for task in tasks:
@@ -51,7 +51,10 @@ async def process_media_tasks(
                     await tasks_repo.mark_failed(task, "; ".join(errors))
                 else:
                     await tasks_repo.mark_done(task)
-                await tasks_repo.enqueue(raw_item_id, ProcessingStage.PUBLISH)
+                raw_item = await session.get(AggRawItem, raw_item_id)
+                next_stage = (ProcessingStage.DEDUP if raw_item.kind == "telegram_post"
+                              else ProcessingStage.PUBLISH)
+                await tasks_repo.enqueue(raw_item_id, next_stage)
             if errors:
                 failed += 1
             else:

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import (
@@ -72,7 +72,7 @@ class RawItemRepository:
         if kind == "telegram_post":
             content_changed = content_changed or any(
                 existing.raw_payload.get(key) != raw_payload.get(key)
-                for key in ("text", "media_refs")
+                for key in ("text", "media_refs", "published_at", "original_url", "reactions_count", "comments_count")
             )
         if content_changed:
             existing.raw_payload = raw_payload
@@ -147,6 +147,8 @@ class RawItemRepository:
 
 
 class TaskRepository:
+    MAX_ATTEMPTS = 5
+
     def __init__(self, session: AsyncSession):
         self._session = session
 
@@ -156,33 +158,73 @@ class TaskRepository:
             .values(raw_item_id=raw_item_id, stage=stage.value, status=TaskStatus.PENDING.value)
             .on_conflict_do_update(
                 index_elements=["raw_item_id", "stage"],
-                set_={"status": TaskStatus.PENDING.value, "available_at": datetime.now(timezone.utc)},
+                set_={
+                    "status": TaskStatus.PENDING.value,
+                    "available_at": datetime.now(timezone.utc),
+                    "attempts": 0,
+                    "last_error": None,
+                },
             )
             .returning(AggProcessingTask)
         )
-        result = await self._session.execute(stmt)
+        result = await self._session.execute(stmt.execution_options(populate_existing=True))
         await self._session.flush()
         return result.scalar_one()
 
-    async def claim_pending(
-        self, stage: ProcessingStage, limit: int, *, retry_failed: bool = False
-    ) -> list[AggProcessingTask]:
-        now = datetime.now(timezone.utc)
-        result = await self._session.execute(
-            select(AggProcessingTask)
-            .where(
+    async def enqueue_missing_media(self) -> None:
+        # Old queues could reach dedup before a media task had ever been created.
+        query = select(
+            AggProcessingTask.raw_item_id,
+            literal(ProcessingStage.MEDIA.value), literal(TaskStatus.PENDING.value),
+        ).where(
+            AggProcessingTask.stage == ProcessingStage.DEDUP.value,
+            AggProcessingTask.status != TaskStatus.DONE.value,
+            exists().where(
+                AggMediaAttachment.raw_item_id == AggProcessingTask.raw_item_id,
+                AggMediaAttachment.download_state != "uploaded",
+            ),
+        )
+        await self._session.execute(pg_insert(AggProcessingTask).from_select(
+            ["raw_item_id", "stage", "status"], query,
+        ).on_conflict_do_nothing(index_elements=["raw_item_id", "stage"]))
+
+    def _ready_query(self):
+        return select(AggProcessingTask).where(
+            or_(
+                AggProcessingTask.status.in_([TaskStatus.PENDING.value, TaskStatus.IN_PROGRESS.value]),
+                (AggProcessingTask.status == TaskStatus.FAILED.value)
+                & (AggProcessingTask.attempts < self.MAX_ATTEMPTS),
+            ),
+            AggProcessingTask.available_at <= datetime.now(timezone.utc),
+        )
+
+    async def has_ready(self, stage: ProcessingStage | None = None) -> bool:
+        query = self._ready_query()
+        if stage is not None:
+            query = query.where(AggProcessingTask.stage == stage.value)
+        return bool(await self._session.scalar(select(query.exists())))
+
+    async def requeue_stage(self, stage: ProcessingStage, limit: int) -> int:
+        if stage == ProcessingStage.NORMALIZE:
+            query = select(AggRawItem.id).where(AggRawItem.kind == "telegram_post").order_by(AggRawItem.id)
+        else:
+            query = select(AggProcessingTask.raw_item_id).where(
                 AggProcessingTask.stage == stage.value,
-                AggProcessingTask.status.in_(
-                    [TaskStatus.PENDING.value, TaskStatus.FAILED.value]
-                    if retry_failed else [TaskStatus.PENDING.value]
-                ),
-                AggProcessingTask.available_at <= now,
-            )
-            .order_by(AggProcessingTask.available_at.asc())
+            ).order_by(AggProcessingTask.id)
+        ids = list(await self._session.scalars(query.limit(limit).with_for_update(skip_locked=True)))
+        for raw_item_id in ids:
+            await self.enqueue(raw_item_id, stage)
+        return len(ids)
+
+    async def claim_pending(self, stage: ProcessingStage, limit: int) -> list[AggProcessingTask]:
+        result = await self._session.execute(
+            self._ready_query().where(AggProcessingTask.stage == stage.value)
+            .order_by(AggProcessingTask.available_at.asc(), AggProcessingTask.id.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
         tasks = list(result.scalars())
+        # Claims stay locked until results commit; a crash rolls back both.
         for task in tasks:
             task.status = TaskStatus.IN_PROGRESS.value
         await self._session.flush()
@@ -199,23 +241,27 @@ class TaskRepository:
             )
             .order_by(AggProcessingTask.updated_at.asc())
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
         tasks = list(result.scalars())
         for task in tasks:
             task.status = TaskStatus.PENDING.value
             task.available_at = datetime.now(timezone.utc)
+            task.attempts = 0
+            task.last_error = None
         await self._session.flush()
         return tasks
 
     async def mark_done(self, task: AggProcessingTask) -> None:
         task.status = TaskStatus.DONE.value
+        task.last_error = None
         await self._session.flush()
 
     async def mark_failed(self, task: AggProcessingTask, error: str) -> None:
         task.status = TaskStatus.FAILED.value
         task.attempts += 1
         task.last_error = error[:2000]
-        backoff_seconds = min(3600, 30 * (2 ** min(task.attempts, 8)))
+        backoff_seconds = min(3600, 30 * (2 ** min(task.attempts - 1, 8)))
         task.available_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
         await self._session.flush()
 
@@ -292,6 +338,11 @@ class CursorRepository:
 class RunRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def interrupt_running(self) -> None:
+        runs = await self._session.scalars(select(AggRun).where(AggRun.status == "running"))
+        for run in runs:
+            await self.finish(run, "failed", run.stats or {}, "процесс остановлен до завершения")
 
     async def start(self, source_key: str, command: str) -> AggRun:
         run = AggRun(source_key=source_key, command=command, status="running")

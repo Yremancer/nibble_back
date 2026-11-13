@@ -82,42 +82,45 @@ async def process_resolve_tasks(session: AsyncSession, limit: int) -> dict:
     done = failed = 0
 
     for task in tasks:
+        raw_item_id = task.raw_item_id
         try:
-            content_version = await raw_items_repo.get_current_content_version(
-                task.raw_item_id
-            )
-            if content_version is None:
-                await tasks_repo.mark_failed(task, "нет текущей версии содержимого")
-                failed += 1
-                continue
-
-            from src.llm.settings import llm_settings
-
-            cached = await classifications_repo.get_cached(
-                content_version.id, llm_settings.DEEPSEEK_MODEL, llm_settings.PROMPT_VERSION
-            )
-            if cached is None:
-                await tasks_repo.mark_failed(task, "классификация ещё не выполнена")
-                failed += 1
-                continue
-
-            result = ClassificationResult.model_validate(cached.result)
-            resolved = await resolve_classification(resolver, result)
-
-            for name, evidence in resolved.unresolved_species:
-                await candidates_repo.add(
-                    task.raw_item_id, CandidateKind.SPECIES.value, name, evidence
+            async with session.begin_nested():
+                content_version = await raw_items_repo.get_current_content_version(
+                    task.raw_item_id
                 )
-            for name, evidence in resolved.unresolved_spots:
-                await candidates_repo.add(
-                    task.raw_item_id, CandidateKind.SPOT.value, name, evidence
-                )
+                if content_version is None:
+                    await tasks_repo.mark_failed(task, "нет текущей версии содержимого")
+                    failed += 1
+                    continue
 
-            await tasks_repo.mark_done(task)
-            await tasks_repo.enqueue(task.raw_item_id, ProcessingStage.DEDUP)
-            done += 1
+                from src.llm.settings import llm_settings
+
+                cached = await classifications_repo.get_cached(
+                    content_version.id, llm_settings.DEEPSEEK_MODEL, llm_settings.PROMPT_VERSION
+                )
+                if cached is None:
+                    await tasks_repo.mark_failed(task, "классификация ещё не выполнена")
+                    failed += 1
+                    continue
+
+                result = ClassificationResult.model_validate(cached.result)
+                resolved = await resolve_classification(resolver, result)
+
+                for name, evidence in resolved.unresolved_species:
+                    await candidates_repo.add(
+                        task.raw_item_id, CandidateKind.SPECIES.value, name, evidence
+                    )
+                for name, evidence in resolved.unresolved_spots:
+                    await candidates_repo.add(
+                        task.raw_item_id, CandidateKind.SPOT.value, name, evidence
+                    )
+
+                await tasks_repo.mark_done(task)
+                await tasks_repo.enqueue(task.raw_item_id, ProcessingStage.MEDIA)
+                done += 1
         except Exception as exc:  # noqa: BLE001
-            logger.exception("resolve stage failed for raw_item %s", task.raw_item_id)
+            logger.exception("resolve stage failed for raw_item %s", raw_item_id)
+            await session.refresh(task)
             await tasks_repo.mark_failed(task, str(exc))
             failed += 1
 

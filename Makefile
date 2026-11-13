@@ -51,6 +51,9 @@ doctor:
 auth-telegram:
 	$(COMPOSE) exec backend python -m src.aggregator.cli auth-telegram
 
+worker:
+	$(COMPOSE) exec -T backend python -m src.aggregator.cli worker
+
 dump:
 	$(COMPOSE) exec -T db sh -c 'exec pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --file="/dumps/$$(date +%Y-%m-%d_%H-%M-%S).sql"'
 

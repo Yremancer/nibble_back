@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     reprocess.add_argument("--limit", type=int, default=100)
+    sub.add_parser("worker", help="непрерывная обработка очереди и отложенных повторов")
 
     retry = sub.add_parser("retry-failed", help="повторить ошибочные задачи этапа")
     retry.add_argument(
@@ -72,19 +73,25 @@ async def dispatch(args: argparse.Namespace) -> int | None:
         await commands.cmd_auth_telegram()
     elif args.command == "doctor":
         return await commands.cmd_doctor()
-    elif args.command == "sync":
-        await commands.cmd_sync(
-            source=args.source, limit=args.limit, pages=args.pages, dry_run=args.dry_run
-        )
-    elif args.command == "backfill":
-        since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc) if args.since else None
-        await commands.cmd_backfill(
-            source=args.source, since=since, limit=args.limit, pages=args.pages
-        )
-    elif args.command == "reprocess":
-        await commands.cmd_reprocess(stage=args.stage, limit=args.limit)
-    elif args.command == "retry-failed":
-        await commands.cmd_retry_failed(stage=args.stage, limit=args.limit)
+    elif args.command == "worker":
+        await commands.cmd_worker()
+    elif args.command in ("sync", "backfill", "reprocess", "retry-failed"):
+        source_key = getattr(args, "source", "pipeline")
+        async with commands.command_run(source_key, args.command) as run_stats:
+            if args.command == "sync":
+                stats = await commands.cmd_sync(
+                    source=args.source, limit=args.limit, pages=args.pages, dry_run=args.dry_run
+                )
+            elif args.command == "backfill":
+                since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc) if args.since else None
+                stats = await commands.cmd_backfill(
+                    source=args.source, since=since, limit=args.limit, pages=args.pages
+                )
+            elif args.command == "reprocess":
+                stats = await commands.cmd_reprocess(stage=args.stage, limit=args.limit)
+            elif args.command == "retry-failed":
+                stats = await commands.cmd_retry_failed(stage=args.stage, limit=args.limit)
+            run_stats.update(stats)
     elif args.command == "export":
         await commands.cmd_export(kind=args.kind, output=args.output)
     elif args.command == "status":

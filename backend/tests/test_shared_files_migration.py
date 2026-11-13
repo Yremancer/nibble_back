@@ -1,29 +1,9 @@
-from uuid import uuid4
-
-import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from psycopg import sql
 
 from src.settings import settings
-
-
-@pytest.fixture
-def migration_db(monkeypatch):
-    name = f"migration_test_{uuid4().hex}"
-    connection_args = dict(
-        host=settings.DB_HOST, port=settings.DB_PORT,
-        user=settings.DB_USER, password=settings.DB_PASSWORD,
-    )
-    with psycopg.connect(dbname="postgres", autocommit=True, **connection_args) as admin:
-        admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-        monkeypatch.setattr(settings, "DB_NAME", name)
-        try:
-            with psycopg.connect(dbname=name, autocommit=True, **connection_args) as db:
-                yield db
-        finally:
-            admin.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(name)))
 
 
 def prepare_legacy(db):
@@ -57,8 +37,11 @@ def prepare_legacy(db):
 
 def test_fresh_install(migration_db):
     command.upgrade(Config("alembic.ini"), "head")
-    assert migration_db.execute("SELECT version_num FROM alembic_version").fetchone() == ("c6e84a12d903",)
+    assert migration_db.execute("SELECT version_num FROM alembic_version").fetchone() == ("d71a942bc603",)
     assert migration_db.execute("SELECT count(*) FROM files").fetchone() == (0,)
+    assert migration_db.execute("SELECT count(*) FROM species").fetchone() == (6,)
+    assert migration_db.execute("SELECT count(*) FROM fishing_methods").fetchone() == (6,)
+    assert migration_db.execute("SELECT name FROM spots").fetchall() == [("Бухта Аякс",)]
 
 
 def test_upgrade_preserves_all_relations_and_sequence(migration_db):

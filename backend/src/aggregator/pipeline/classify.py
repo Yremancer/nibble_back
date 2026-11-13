@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import ProcessingStage
 from src.aggregator.repository import ClassificationRepository, RawItemRepository, TaskRepository
 from src.llm.client import DeepSeekClient
-from src.llm.exceptions import LlmError
 from src.llm.prompts import load_prompt
 from src.llm.schemas import ClassificationResult
 from src.llm.settings import LlmSettings
@@ -77,21 +76,21 @@ async def process_classify_tasks(
     done = failed = skipped = 0
 
     for task in tasks:
+        raw_item_id = task.raw_item_id
         try:
-            result = await stage.run_for_raw_item(task.raw_item_id)
-            if result is None:
-                await tasks_repo.mark_failed(task, "DeepSeek не настроен")
-                skipped += 1
-                continue
-            await tasks_repo.mark_done(task)
-            if result.decision.value != "discard":
-                await tasks_repo.enqueue(task.raw_item_id, ProcessingStage.RESOLVE)
-            done += 1
-        except LlmError as exc:
-            await tasks_repo.mark_failed(task, str(exc))
-            failed += 1
+            async with session.begin_nested():
+                result = await stage.run_for_raw_item(task.raw_item_id)
+                if result is None:
+                    await tasks_repo.mark_failed(task, "DeepSeek не настроен")
+                    skipped += 1
+                    continue
+                await tasks_repo.mark_done(task)
+                if result.decision.value != "discard":
+                    await tasks_repo.enqueue(task.raw_item_id, ProcessingStage.RESOLVE)
+                done += 1
         except Exception as exc:  # noqa: BLE001 - не терять задачу при любой ошибке
-            logger.exception("classify stage failed for raw_item %s", task.raw_item_id)
+            logger.exception("classify stage failed for raw_item %s", raw_item_id)
+            await session.refresh(task)
             await tasks_repo.mark_failed(task, str(exc))
             failed += 1
 

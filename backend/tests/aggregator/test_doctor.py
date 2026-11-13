@@ -18,7 +18,7 @@ def dependencies(monkeypatch):
 
         async def execute(self, statement):
             if "alembic_version" in str(statement):
-                return SimpleNamespace(scalars=lambda: ["c6e84a12d903"])
+                return SimpleNamespace(scalars=lambda: ["d71a942bc603"])
 
     @asynccontextmanager
     async def session_context():

@@ -43,7 +43,7 @@ async def test_exact_text_hash_marks_duplicate(session):
     post = await _make_post(session, "post-a")
     original.post_id = post.id
     await session.flush()
-    await _add_content_version(session, original.id, "отчет")
+    await _add_content_version(session, original.id, "Сегодня поймали много рыбы в бухте")
 
     new_item, _, _ = await repo.upsert_raw_item(
         kind="telegram_post", source_key="telegram:2", external_id="1",
@@ -52,7 +52,7 @@ async def test_exact_text_hash_marks_duplicate(session):
     )
 
     outcome = await resolve_duplicate(
-        session, new_item.id, "same-hash", "отчет", datetime.now(timezone.utc), []
+        session, new_item.id, "same-hash", "Сегодня поймали много рыбы в бухте", datetime.now(timezone.utc), []
     )
 
     assert outcome.is_duplicate is True

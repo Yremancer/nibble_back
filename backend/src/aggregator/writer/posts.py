@@ -11,6 +11,7 @@
 
 from datetime import date, datetime
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.post import Post, PostKind, PostSpecies, PostStatus
 
@@ -42,7 +43,9 @@ class PostWriter:
         if existing_post_id is not None:
             post = await self._session.get(Post, existing_post_id)
         else:
-            post = None
+            post = await self._session.scalar(select(Post).where(
+                Post.source_id == source_id, Post.external_post_id == external_post_id,
+            ).with_for_update())
 
         managed = (post.managed_fields or {}) if post else {}
 
@@ -76,9 +79,15 @@ class PostWriter:
             post.bait = bait
         if "conditions" not in managed:
             post.conditions = conditions
+        if "published_at" not in managed:
+            post.published_at = published_at
+        if "original_url" not in managed:
+            post.original_url = original_url
 
-        post.tg_reactions_count = tg_reactions_count
-        post.tg_comments_count = tg_comments_count
+        if "tg_reactions_count" not in managed:
+            post.tg_reactions_count = tg_reactions_count
+        if "tg_comments_count" not in managed:
+            post.tg_comments_count = tg_comments_count
 
         await self._session.flush()
         return post
@@ -90,11 +99,10 @@ class PostWriter:
         Полная замена набора по посту — классификация детерминирована по
         текущей версии содержимого."""
         existing = await self._session.get(Post, post_id)
-        if existing is None:
+        if existing is None or any(key in (existing.managed_fields or {}) for key in ("catches", "species")):
             return
-        for item in list(existing.catches):
-            await self._session.delete(item)
-        await self._session.flush()
+        await self._session.execute(delete(PostSpecies).where(PostSpecies.post_id == post_id))
+        self._session.expire(existing, ["catches"])
         for catch in catches:
             self._session.add(
                 PostSpecies(

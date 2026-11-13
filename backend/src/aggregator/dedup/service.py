@@ -2,7 +2,7 @@
 
 Уровни (см. ТЗ, раздел 11):
 1. Явная пересылка/ссылка на оригинал.
-2. Точный хеш нормализованного текста.
+2. Точное совпадение нормализованного текста.
 3. Совпадение медиа (sha256 файлов).
 4. Похожий текст (pg_trgm) + доп. признаки (место, дата, набор фото).
 5. DeepSeek для спорных пар (не реализован в этой версии — попадает в review).
@@ -14,19 +14,36 @@
 
 from datetime import timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import (
     AggContentVersion,
     AggDedupDecision,
     AggRawItem,
+    AggMediaAttachment,
+    AggProcessingTask,
     DedupDecisionKind,
 )
+from src.aggregator.normalize.text import normalize_for_hash
 
-ALGORITHM_VERSION = "v1"
+ALGORITHM_VERSION = "v2"
 _CANDIDATE_WINDOW_DAYS = 14
 _TRGM_SIMILARITY_THRESHOLD = 0.5
 _MAX_CANDIDATES = 20
+
+
+def _canonical_candidate():
+    return or_(
+        AggRawItem.post_id.is_not(None),
+        exists().where(
+            AggProcessingTask.raw_item_id == AggRawItem.id,
+            AggProcessingTask.stage == "dedup",
+            AggProcessingTask.status == "done",
+        ) & ~exists().where(
+            AggDedupDecision.item_a_id == AggRawItem.id,
+            AggDedupDecision.decision == DedupDecisionKind.DUPLICATE.value,
+        ),
+    )
 
 
 class DedupCandidate:
@@ -43,17 +60,20 @@ class DedupService:
         self._session = session
 
     async def find_exact_duplicate(
-        self, content_hash_value: str, exclude_raw_item_id: int
+        self, normalized_text: str, exclude_raw_item_id: int
     ) -> AggRawItem | None:
-        """Уровень 2: точный хеш нормализованного текста в окне времени."""
+        """Уровень 2: совпадение очищенного текста после нормализации."""
         result = await self._session.execute(
             select(AggRawItem)
             .join(AggContentVersion, AggContentVersion.raw_item_id == AggRawItem.id)
             .where(
                 AggContentVersion.is_current.is_(True),
                 AggRawItem.id != exclude_raw_item_id,
-                AggRawItem.content_hash == content_hash_value,
-                AggRawItem.post_id.is_not(None),
+                func.btrim(func.regexp_replace(
+                    func.lower(func.normalize(AggContentVersion.normalized_text, literal_column("NFKC"))),
+                    r"\s+", " ", "g",
+                )) == normalize_for_hash(normalized_text),
+                _canonical_candidate(),
             )
             .order_by(AggRawItem.first_seen_at.asc())
             .limit(1)
@@ -63,44 +83,29 @@ class DedupService:
     async def find_text_candidates(
         self, normalized_text: str, exclude_raw_item_id: int, published_at
     ) -> list[DedupCandidate]:
-        """Уровень 4: pg_trgm similarity на уже опубликованных постах в
-        ограниченном временном окне — не полный перебор базы."""
+        """Уровень 4: pg_trgm similarity в ограниченном временном окне,
+        включая канонические записи текущей пачки до публикации."""
         if not normalized_text or len(normalized_text) < 20:
             return []
 
         window_start = published_at - timedelta(days=_CANDIDATE_WINDOW_DAYS)
         window_end = published_at + timedelta(days=_CANDIDATE_WINDOW_DAYS)
 
-        query = text(
-            """
-            SELECT r.id AS raw_item_id, cv.id AS content_version_id,
-                   similarity(cv.normalized_text, :needle) AS sim
-            FROM agg_content_versions cv
-            JOIN agg_raw_items r ON r.id = cv.raw_item_id
-            WHERE cv.is_current = true
-              AND r.id != :exclude_id
-              AND r.post_id IS NOT NULL
-              AND r.first_seen_at BETWEEN :window_start AND :window_end
-              AND similarity(cv.normalized_text, :needle) > :threshold
-            ORDER BY sim DESC
-            LIMIT :limit
-            """
-        )
+        similarity = func.similarity(AggContentVersion.normalized_text, normalized_text)
         rows = await self._session.execute(
-            query,
-            {
-                "needle": normalized_text,
-                "exclude_id": exclude_raw_item_id,
-                "window_start": window_start,
-                "window_end": window_end,
-                "threshold": _TRGM_SIMILARITY_THRESHOLD,
-                "limit": _MAX_CANDIDATES,
-            },
+            select(AggRawItem.id, AggContentVersion.id, similarity)
+            .join(AggContentVersion, AggContentVersion.raw_item_id == AggRawItem.id)
+            .where(
+                AggContentVersion.is_current.is_(True),
+                AggRawItem.id != exclude_raw_item_id,
+                _canonical_candidate(),
+                AggRawItem.first_seen_at.between(window_start, window_end),
+                similarity > _TRGM_SIMILARITY_THRESHOLD,
+            )
+            .order_by(similarity.desc(), AggRawItem.id)
+            .limit(_MAX_CANDIDATES)
         )
-        return [
-            DedupCandidate(row.raw_item_id, row.content_version_id, row.sim)
-            for row in rows
-        ]
+        return [DedupCandidate(*row) for row in rows]
 
     async def find_media_sha_overlap(
         self, media_file_ids: list[int], exclude_raw_item_id: int
@@ -111,18 +116,17 @@ class DedupService:
         с текстовым сходством."""
         if not media_file_ids:
             return []
-        query = text(
-            """
-            SELECT DISTINCT pm.post_id
-            FROM post_media pm
-            JOIN agg_raw_items r ON r.post_id = pm.post_id
-            WHERE pm.media_file_id = ANY(:ids) AND r.id != :exclude_id
-            """
+        rows = await self._session.scalars(
+            select(AggMediaAttachment.raw_item_id)
+            .join(AggRawItem, AggRawItem.id == AggMediaAttachment.raw_item_id)
+            .where(
+                AggMediaAttachment.media_file_id.in_(media_file_ids),
+                AggRawItem.id != exclude_raw_item_id,
+                _canonical_candidate(),
+            )
+            .distinct()
         )
-        rows = await self._session.execute(
-            query, {"ids": media_file_ids, "exclude_id": exclude_raw_item_id}
-        )
-        return [row[0] for row in rows]
+        return list(rows)
 
     async def record_decision(
         self,
