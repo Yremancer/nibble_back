@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.models.media import PostMedia
 from src.models.post import Post, PostSpecies, PostStatus, Source
-from src.models.user import User
+from src.user.models import User
 from src.post.schemas import FeedQuery
 from src.spot.models import Spot
 
