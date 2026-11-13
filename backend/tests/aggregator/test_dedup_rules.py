@@ -6,7 +6,7 @@ from sqlalchemy import select
 from src.aggregator.dedup.pipeline import resolve_duplicate
 from src.aggregator.models import AggDedupDecision, DedupDecisionKind
 from src.aggregator.repository import RawItemRepository
-from src.models.post import Post, Source
+from src.post.models import Post, Source
 
 
 async def _make_post(session, external_id: str) -> Post:

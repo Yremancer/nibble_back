@@ -18,13 +18,22 @@ def get_auth_service(users: UserServiceDep) -> AuthService:
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
-async def get_current_user(
+async def get_optional_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER_AUTH)],
     service: AuthServiceDep,
-) -> User:
+) -> User | None:
     if credentials is None:
-        raise AuthenticationError
+        return None
     return await service.current_user(credentials.credentials)
+
+
+OptionalUserDep = Annotated[User | None, Depends(get_optional_user)]
+
+
+async def get_current_user(user: OptionalUserDep) -> User:
+    if user is None:
+        raise AuthenticationError
+    return user
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]

@@ -1,4 +1,3 @@
-"""Seed minimal dictionaries used by the aggregator."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -34,7 +33,6 @@ def upgrade() -> None:
             INSERT INTO fishing_methods (name) VALUES (:name)
             ON CONFLICT (name) DO NOTHING
         """), {"name": name})
-    # Coordinates come from the existing fishing-vl.ru import (buhta-ajax).
     op.execute("""
         INSERT INTO spots (city_id, name, lat, lon, aliases)
         SELECT c.id, 'Бухта Аякс', 43.029808, 131.940298, ARRAY['аякс', 'buhta-ajax']
@@ -44,5 +42,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Dictionary entries may already have user data referencing them.
     pass

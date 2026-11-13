@@ -16,7 +16,7 @@ from src.aggregator.pipeline.ingest import ingest_telegram_post
 from src.aggregator.repository import CursorRepository
 from src.aggregator.sources.telegram_collector import CollectedPost, TelegramCollector
 from src.aggregator.sources.telegram_public import PublicTelegramCollector
-from src.models.post import Source, SourceType
+from src.post.models import Source, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,6 @@ async def sync_telegram_source(
                 cursor_blocked = True
                 continue
             if not await save(collected, advance_cursor=not cursor_blocked):
-                # Следующий запуск должен вернуться к пропуску, даже если записи после него сохранены.
                 cursor_blocked = True
     except Exception:
         logger.exception("telegram history failed for %s", cfg.channel)
@@ -144,7 +143,6 @@ async def sync_telegram_source(
             hours=aggregator_settings.AGG_RECHECK_WINDOW_HOURS
         )
         try:
-            # Перепроверка не расходует лимит новых записей, иначе малый лимит остановит сбор.
             async for collected in collector.iter_history(max_id=min_id + 1):
                 if collected is None:
                     stats["errors"] += 1

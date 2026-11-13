@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 from src.aggregator.writer.posts import PostWriter
-from src.models.post import PostKind, PostStatus, Source
+from src.post.models import PostKind, PostStatus, Source
 
 
 @pytest.mark.asyncio

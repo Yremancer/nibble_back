@@ -1,4 +1,3 @@
-"""Merge parsing and storage; use files for all media links."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -44,7 +43,6 @@ def upgrade() -> None:
     )).scalar_one():
         raise RuntimeError("media_files: conflicting files metadata for the same S3 key")
 
-    # IDs belong to independent sequences; matching numbers do not identify the same file.
     op.execute("""
         CREATE TEMP TABLE shared_file_map ON COMMIT DROP AS
         SELECT m.id AS old_id,

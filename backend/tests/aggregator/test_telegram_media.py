@@ -18,7 +18,7 @@ from src.aggregator.repository import (
 )
 from src.llm.settings import llm_settings
 from src.models.media import PostMedia
-from src.models.post import Post, Source
+from src.post.models import Post, Source
 from src.storage.exceptions import StorageUnavailableError
 from src.storage.models import File
 from src.storage.repository import FileRepository
@@ -117,7 +117,6 @@ async def test_album_upload_retry_after_publish_replace_and_remove(session, monk
     attachments = await MediaAttachmentRepository(session).all_for_item(item_id)
     assert [a.download_state for a in attachments] == ["uploaded", "failed", "uploaded"]
 
-    # Retry a due failed task after the text has already been published.
     task = await session.scalar(select(AggProcessingTask).where(
         AggProcessingTask.raw_item_id == item_id, AggProcessingTask.stage == "media",
     ))

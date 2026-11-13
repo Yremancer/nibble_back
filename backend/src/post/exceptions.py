@@ -22,3 +22,15 @@ class KlevSourceMissingError(AppError):
 class InvalidCursorError(AppError):
     status_code = 422
     detail = "Invalid cursor"
+
+
+class ImportedPostLikeError(ForbiddenError):
+    detail = "Imported posts cannot be liked"
+
+
+class CommentNotFoundError(EntityNotFoundError):
+    entity = "Comment"
+
+
+class CommentForbiddenError(ForbiddenError):
+    detail = "You can delete only your own comments"

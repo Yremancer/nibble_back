@@ -6,19 +6,25 @@ from zoneinfo import ZoneInfo
 
 from src.city.repository import CityRepository
 from src.models.media import MediaType, PostMedia
-from src.models.post import Post, PostKind, PostSpecies, PostStatus
+from src.post.models import Comment, Post, PostKind, PostSpecies, PostStatus, SourceType
 from src.post.exceptions import (
+    CommentForbiddenError,
+    CommentNotFoundError,
+    ImportedPostLikeError,
     InvalidCursorError,
     InvalidPostError,
     KlevSourceMissingError,
     PostForbiddenError,
     PostNotFoundError,
 )
-from src.post.repository import PostRepository
+from src.post.repository import PostEngagement, PostRepository
 from src.post.schemas import (
     AuthorOut,
     CatchIn,
     CatchOut,
+    CommentCreate,
+    CommentOut,
+    CommentPage,
     FeedQuery,
     MediaOut,
     MethodRef,
@@ -35,7 +41,7 @@ from src.storage.client import StorageClient
 from src.storage.exceptions import StorageUnavailableError
 from src.storage.models import File
 from src.storage.repository import FileRepository
-from src.user.models import User
+from src.user.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -87,20 +93,94 @@ class PostService:
         self.cities = cities
         self.storage = storage
 
-    async def get_feed(self, query: FeedQuery) -> PostPage:
+    async def get_feed(self, query: FeedQuery, viewer: User | None = None) -> PostPage:
         after = decode_cursor(query.cursor) if query.cursor else None
         posts = await self.repo.feed(query, after)
         page, has_more = posts[: query.limit], len(posts) > query.limit
+        engagement = await self.repo.engagement(
+            [post.id for post in page], viewer.id if viewer else None
+        )
         return PostPage(
-            items=await asyncio.gather(*(self._card(p) for p in page)),
+            items=await asyncio.gather(
+                *(
+                    self._card(p, viewer, engagement.get(p.id, PostEngagement(0, 0, False)))
+                    for p in page
+                )
+            ),
             next_cursor=encode_cursor(page[-1]) if has_more else None,
         )
 
-    async def get_post(self, post_id: int) -> PostOut:
+    async def get_post(self, post_id: int, viewer: User | None = None) -> PostOut:
         post = await self.repo.get_visible(post_id)
         if post is None:
             raise PostNotFoundError(id=post_id)
-        return await self._card(post)
+        return await self._card(post, viewer)
+
+    async def like(self, post_id: int, user: User) -> None:
+        post = await self._interaction_post(post_id)
+        if post.source.type != SourceType.KLEV:
+            raise ImportedPostLikeError
+        await self.repo.add_like(post_id, user.id)
+
+    async def unlike(self, post_id: int, user: User) -> None:
+        await self._interaction_post(post_id)
+        await self.repo.remove_like(post_id, user.id)
+
+    async def get_comments(
+        self, post_id: int, cursor: int | None, limit: int
+    ) -> CommentPage:
+        if not 1 <= limit <= 100:
+            raise InvalidPostError("limit must be between 1 and 100")
+        if await self.repo.get_for_interaction(post_id) is None:
+            raise PostNotFoundError(id=post_id)
+        rows = await self.repo.comments(post_id, cursor, limit)
+        return CommentPage(
+            items=[self._comment(comment, author) for comment, author in rows[:limit]],
+            next_cursor=rows[limit - 1][0].id if len(rows) > limit else None,
+        )
+
+    async def create_comment(
+        self, post_id: int, data: CommentCreate, user: User
+    ) -> CommentOut:
+        await self._interaction_post(post_id)
+        if data.parent_id is not None:
+            if await self.repo.get_comment(post_id, data.parent_id) is None:
+                raise CommentNotFoundError(id=data.parent_id)
+        comment = Comment(
+            post_id=post_id, author_id=user.id, parent_id=data.parent_id, text=data.text
+        )
+        await self.repo.add_comment(comment)
+        return self._comment(comment, user)
+
+    async def delete_comment(self, post_id: int, comment_id: int, user: User) -> None:
+        await self._interaction_post(post_id)
+        comment = await self.repo.get_comment(post_id, comment_id)
+        if comment is None:
+            raise CommentNotFoundError(id=comment_id)
+        if comment.author_id != user.id and user.role not in (
+            UserRole.MODERATOR, UserRole.ADMIN
+        ):
+            raise CommentForbiddenError
+        await self.repo.delete_comment(comment)
+
+    async def _interaction_post(self, post_id: int) -> Post:
+        post = await self.repo.get_for_interaction(post_id, lock=True)
+        if post is None:
+            raise PostNotFoundError(id=post_id)
+        return post
+
+    @staticmethod
+    def _comment(comment: Comment, author: User) -> CommentOut:
+        return CommentOut(
+            id=comment.id,
+            post_id=comment.post_id,
+            parent_id=comment.parent_id,
+            text=comment.text,
+            author=AuthorOut(
+                id=author.id, display_name=author.display_name, avatar_url=author.avatar_url
+            ),
+            created_at=comment.created_at,
+        )
 
     async def create(self, data: PostCreate, user: User) -> PostOut:
         await self._check_fishing_date(data.fishing_date, user)
@@ -202,7 +282,6 @@ class PostService:
         if missing:
             raise InvalidPostError(f"Files not found: {missing}")
         files = [by_key[k] for k in keys]
-        # Владельца у файла нет, поэтому хотя бы не даём прикрепить уже занятый чужим постом.
         busy = await self.repo.attached_file_ids(
             [f.id for f in files], except_post_id=except_post_id
         )
@@ -220,7 +299,6 @@ class PostService:
 
     async def _replace_media(self, post: Post, keys: list[str]) -> list[File]:
         files = await self._load_files(keys, except_post_id=post.id)
-        # Уже прикреплённые файлы переиспользуем: пересоздание нарушило бы UNIQUE(post_id, media_file_id).
         current = {m.media_file_id: m for m in post.media}
         media = []
         for index, file in enumerate(files):
@@ -250,14 +328,20 @@ class PostService:
             try:
                 await self.storage.delete(file.key)
             except StorageUnavailableError:
-                # Пост уже изменён; лишний объект в хранилище лучше, чем отказ пользователю.
                 logger.warning("Failed to delete %s from storage", file.key)
 
-    async def _card(self, post: Post, viewer: User | None = None) -> PostOut:
+    async def _card(
+        self,
+        post: Post,
+        viewer: User | None = None,
+        engagement: PostEngagement | None = None,
+    ) -> PostOut:
+        if engagement is None:
+            stats = await self.repo.engagement([post.id], viewer.id if viewer else None)
+            engagement = stats.get(post.id, PostEngagement(0, 0, False))
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
-        # Автору в ответе на его же действие показываем всё: иначе он не увидит, что сохранилось.
         own = viewer is not None and post.author_id == viewer.id
         return PostOut(
             id=post.id,
@@ -300,8 +384,9 @@ class PostService:
                 MediaOut(type=m.type, url=url)
                 for m, url in zip(post.media, urls, strict=True)
             ],
-            likes_count=post.likes_count,
-            comments_count=post.comments_count,
+            likes_count=engagement.likes_count,
+            comments_count=engagement.comments_count,
+            liked_by_me=engagement.liked_by_me,
             tg_reactions_count=post.tg_reactions_count,
             tg_comments_count=post.tg_comments_count,
             original_url=post.original_url,

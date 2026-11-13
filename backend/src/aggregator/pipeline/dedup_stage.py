@@ -13,7 +13,6 @@ async def process_dedup_tasks(session: AsyncSession, limit: int) -> dict:
     tasks_repo = TaskRepository(session)
     raw_items_repo = RawItemRepository(session)
 
-    # Serialize decisions so concurrent batches see the previous canonical choice.
     await session.execute(text("SELECT pg_advisory_xact_lock(731912, 1)"))
     tasks = await tasks_repo.claim_pending(ProcessingStage.DEDUP, limit)
     done = failed = duplicates = 0
