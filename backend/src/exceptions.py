@@ -1,6 +1,7 @@
 class AppError(Exception):
     status_code = 500
     detail = "Internal error"
+    headers: dict[str, str] | None = None
 
     def __init__(self, detail: str | None = None):
         self.detail = detail or self.detail

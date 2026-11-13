@@ -1,4 +1,8 @@
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from src.auth.constants import (
+    JWT_SECRET_MIN_LENGTH,
+)
 
 
 class Settings(BaseSettings):
@@ -14,6 +18,10 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str
 
     WEATHER_CACHE_TTL_MINUTES: int = 15
+
+    JWT_SECRET_KEY: SecretStr = Field(min_length=JWT_SECRET_MIN_LENGTH)
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    AUTH_PASSWORD_MIN_LENGTH: int = 8
 
     S3_ENDPOINT_URL: str
     S3_ACCESS_KEY_ID: str
