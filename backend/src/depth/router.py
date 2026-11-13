@@ -4,7 +4,6 @@ from src.depth.schemas import DepthZones
 
 router = APIRouter(prefix="/depths", tags=["depths"])
 
-# Зоны меняются только при перезаливке данных, браузеру можно держать их сутки.
 CACHE_CONTROL = "public, max-age=86400"
 
 

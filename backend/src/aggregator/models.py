@@ -1,11 +1,3 @@
-"""Служебные таблицы сборщика/агрегатора.
-
-Отделены от доменных моделей (src/models): здесь хранится состояние сбора и
-обработки, а не то, что видит бэк. Состояние сбора и состояние обработки —
-разные вещи (см. ТЗ): сбой классификации или S3 не должен блокировать
-сохранение следующих публикаций, поэтому каждый этап публикации хранится как
-отдельная задача в agg_processing_tasks.
-"""
 
 from datetime import datetime
 from enum import StrEnum
@@ -83,8 +75,6 @@ class AttachmentDownloadState(StrEnum):
 
 
 class AggRawItem(Base):
-    """Сырая публикация/карточка источника. Один раз получена — хранится
-    всегда, независимо от последующих решений классификатора."""
 
     __tablename__ = "agg_raw_items"
     __table_args__ = (
@@ -95,9 +85,6 @@ class AggRawItem(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     kind: Mapped[str] = mapped_column(String(30))
     source_key: Mapped[str] = mapped_column(String(100), index=True)
-    """Строковый идентификатор источника: 'telegram:<external_id сущности sources>'
-    или 'farpost' или 'fishing_vl'. Не у всех источников есть запись в sources
-    (Фарпост и fishing-vl.ru туда не пишутся согласно модели PDF)."""
     external_id: Mapped[str] = mapped_column(String(255), index=True)
     raw_payload: Mapped[dict] = mapped_column(JSONB)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
@@ -112,8 +99,6 @@ class AggRawItem(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    """Проставляется только по достоверному событию удаления, не по пробелу
-    в последовательности ID."""
 
     post_id: Mapped[int | None] = mapped_column(
         ForeignKey("posts.id", ondelete="SET NULL"), index=True
@@ -133,9 +118,6 @@ class AggRawItem(Base):
 
 
 class AggContentVersion(Base):
-    """Версия содержимого: исходный и очищенный текст. Новая версия
-    появляется при редактировании публикации источником или смене правил
-    нормализации. Исходный текст никогда не перезаписывается."""
 
     __tablename__ = "agg_content_versions"
     __table_args__ = (
@@ -156,8 +138,6 @@ class AggContentVersion(Base):
     original_text: Mapped[str | None] = mapped_column(Text)
     normalized_text: Mapped[str | None] = mapped_column(Text)
     removed_boilerplate: Mapped[str | None] = mapped_column(Text)
-    """Распознанный служебный хвост (ссылки/призыв прислать отчёт), убранный
-    из normalized_text, но сохранённый отдельно для диагностики."""
     normalization_version: Mapped[str] = mapped_column(String(50))
     is_current: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("true"))
     created_at: Mapped[datetime] = mapped_column(
@@ -166,8 +146,6 @@ class AggContentVersion(Base):
 
 
 class AggCursor(Base):
-    """Курсор обхода источника. Курсор новых сообщений и курсор загрузки
-    истории хранятся раздельно по cursor_type."""
 
     __tablename__ = "agg_cursors"
     __table_args__ = (
@@ -185,7 +163,6 @@ class AggCursor(Base):
 
 
 class AggRun(Base):
-    """История запусков команд сборщика с метриками по источнику."""
 
     __tablename__ = "agg_runs"
     __table_args__ = (enum_check("status", RunStatus),)
@@ -203,9 +180,6 @@ class AggRun(Base):
 
 
 class AggClassification(Base):
-    """Результат DeepSeek, закешированный по версии содержимого, версии
-    инструкции и модели: смена промпта должна позволять осознанный
-    пересчёт, не затрагивая остальные кеш-ключи."""
 
     __tablename__ = "agg_classifications"
     __table_args__ = (
@@ -222,8 +196,6 @@ class AggClassification(Base):
     prompt_version: Mapped[str] = mapped_column(String(50))
     decision: Mapped[str] = mapped_column(String(20))
     result: Mapped[dict] = mapped_column(JSONB)
-    """Полный ответ классификатора по контракту (decision/category/reason/
-    extracted fields/evidence)."""
     tokens_in: Mapped[int | None] = mapped_column(Integer)
     tokens_out: Mapped[int | None] = mapped_column(Integer)
     cost_estimate_usd: Mapped[float | None] = mapped_column(Numeric(10, 5))
@@ -233,9 +205,6 @@ class AggClassification(Base):
 
 
 class AggProcessingTask(Base):
-    """Очередь задач по этапам. Статус per-stage, чтобы сбой одного этапа
-    (например DeepSeek) не блокировал сохранение следующих сырых публикаций
-    и позволял ручной повтор (retry-failed)."""
 
     __tablename__ = "agg_processing_tasks"
     __table_args__ = (
@@ -255,16 +224,12 @@ class AggProcessingTask(Base):
     available_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
-    """Когда задача снова доступна к выполнению (экспоненциальный backoff)."""
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
 class AggMediaAttachment(Base):
-    """Вложение сырой публикации до и после загрузки в S3. Хранит
-    стабильную ссылку на источник вложения (file_id Telegram, id фото
-    Фарпоста), так как прямые URL источника могут истекать."""
 
     __tablename__ = "agg_media_attachments"
     __table_args__ = (
@@ -278,7 +243,6 @@ class AggMediaAttachment(Base):
     )
     attachment_index: Mapped[int] = mapped_column(SmallInteger)
     source_ref: Mapped[str] = mapped_column(Text)
-    """Стабильный идентификатор источника вложения (не временный URL)."""
     media_type: Mapped[str] = mapped_column(String(10))
     download_state: Mapped[str] = mapped_column(
         String(20), server_default=sql_text("'pending'")
@@ -291,8 +255,6 @@ class AggMediaAttachment(Base):
 
 
 class AggDedupDecision(Base):
-    """Решение по паре потенциальных дублей с признаками и версией
-    алгоритма — обратимо, не объединяет кластер автоматически."""
 
     __tablename__ = "agg_dedup_decisions"
     __table_args__ = (enum_check("decision", DedupDecisionKind),)
@@ -315,8 +277,6 @@ class AggDedupDecision(Base):
 
 
 class AggUnresolvedCandidate(Base):
-    """Неразрешённое название вида/места/способа — кандидат для ручной
-    модерации, без создания фиктивных справочных записей."""
 
     __tablename__ = "agg_unresolved_candidates"
     __table_args__ = (enum_check("kind", CandidateKind),)

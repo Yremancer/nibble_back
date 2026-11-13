@@ -16,7 +16,7 @@ from src.aggregator.repository import CursorRepository
 from src.aggregator.sources.farpost_collector import FarpostCollector, FarpostHttpError, ListingDetail, ListingSummary
 from src.aggregator.sources.farpost_import import import_listings
 from src.aggregator.sources.farpost_sync import _resolve_city_id, sync_farpost
-from src.models.geo import City
+from src.city.models import City
 from src.models.listing import Listing, ListingPriceHistory
 
 

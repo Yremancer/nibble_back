@@ -1,5 +1,3 @@
-"""Привязка скачанных медиафайлов к посту/объявлению с сохранением
-единого порядка (attachment_index) и типа (фото/видео)."""
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +13,6 @@ class PostMediaWriter:
     async def set_media(
         self, post_id: int, items: list[dict]
     ) -> None:
-        """items: [{"media_file_id": int, "type": "photo"|"video", "sort_order": int}]
-        Полная замена по посту: повторный импорт пересобирает список из
-        уже загруженных вложений (upload идемпотентен по sha256)."""
         post = await self._session.get(Post, post_id)
         if post is None or "media" in (post.managed_fields or {}):
             return

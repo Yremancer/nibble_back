@@ -1,4 +1,3 @@
-"""Доступ к служебным таблицам агрегатора."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -44,10 +43,6 @@ class RawItemRepository:
         content_hash: str,
         parser_version: str,
     ) -> tuple[AggRawItem, bool, bool]:
-        """Создаёт сырую публикацию либо обновляет её, если содержимое
-        изменилось (last_changed_at продвигается только при реальном
-        изменении хеша — редактирование, а не каждый повторный обход).
-        Возвращает (item, content_changed, is_new)."""
         existing = await self.get_by_source_external(source_key, external_id)
         now = datetime.now(timezone.utc)
 

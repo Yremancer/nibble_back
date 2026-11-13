@@ -1,7 +1,3 @@
-"""Приём сырой публикации источника: сохраняет оригинал, продвигает
-позицию обхода (курсор) отдельно от последующей обработки, ставит задачу
-нормализации. Сбой нормализации/классификации не блокирует сохранение
-следующей публикации (см. ТЗ, раздел 4)."""
 
 import logging
 
@@ -26,8 +22,6 @@ async def ingest_telegram_post(
     boilerplate_rules: list[NormalizationRule],
     parser_version: str,
 ) -> tuple[int, bool, bool]:
-    """media_refs: [(source_ref, media_type)] в исходном порядке альбома.
-    Возвращает (raw_item_id, content_changed, is_new)."""
 
     raw_items_repo = RawItemRepository(session)
     attachments_repo = MediaAttachmentRepository(session)
@@ -53,8 +47,5 @@ async def ingest_telegram_post(
         if item.post_id is not None and current is not None and current.original_text == raw_text:
             await TaskRepository(session).enqueue(item.id, ProcessingStage.MEDIA)
             return item.id, changed, is_new
-        # нормализация выполняется сразу (это чистая функция, не внешний
-        # вызов): дальше в очередь ставится только classify, т.к. сбой
-        # внешних сервисов (DeepSeek/S3) не должен блокировать ingest.
         await normalize_raw_item(session, item.id, raw_text, boilerplate_rules)
     return item.id, changed, is_new

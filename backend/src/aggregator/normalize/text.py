@@ -1,10 +1,3 @@
-"""Нормализация текста публикации: удаление служебных блоков источника и
-подготовка хеша содержимого для точной дедупликации.
-
-Очистка настраивается по источнику (см. sources.json -> normalization) и не
-должна удалять произвольные ссылки/контакты во всех публикациях — только
-распознанный шаблон конкретного канала (см. ТЗ, раздел 8).
-"""
 
 import hashlib
 import re
@@ -29,8 +22,6 @@ def _compile_flags(flags: str) -> int:
 
 
 def strip_boilerplate(text: str, rules: list) -> tuple[str, str | None]:
-    """Возвращает (очищенный_текст, удалённый_фрагмент_или_None).
-    rules — список NormalizationRule (pattern/flags) для конкретного источника."""
     removed_parts: list[str] = []
     cleaned = text
     for rule in rules:
@@ -45,8 +36,6 @@ def strip_boilerplate(text: str, rules: list) -> tuple[str, str | None]:
 
 
 def normalize_for_hash(text: str) -> str:
-    """Схлопывает пробелы и приводит регистр для сравнения точных дублей и
-    построения content_hash. Не меняет смысл текста."""
     text = unicodedata.normalize("NFKC", text)
     text = text.lower()
     text = re.sub(r"\s+", " ", text)

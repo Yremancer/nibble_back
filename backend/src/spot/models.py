@@ -29,8 +29,6 @@ class Spot(Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     aliases: Mapped[list[str] | None] = mapped_column(ARRAY(String(150)))
-    """Альтернативные названия для словарного сопоставления импортированных
-    упоминаний места (см. открытый вопрос в PDF, раздел 5)."""
 
     species: Mapped[list["SpotSpecies"]] = relationship(
         cascade="all, delete-orphan", passive_deletes=True

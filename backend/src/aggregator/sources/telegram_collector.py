@@ -1,13 +1,3 @@
-"""Telegram сборщик на Telethon.
-
-Группирует альбомы по grouped_id (копит все сообщения одной группы перед
-тем как считать альбом завершённым — не полагается на первое полученное
-сообщение и учитывает границу страниц истории), сохраняет фото/видео в
-исходном порядке, обрабатывает FloodWait и временные ошибки повторами.
-
-Курсор новых сообщений (incremental) и курсор загрузки истории (backfill)
-хранятся раздельно через CursorRepository.
-"""
 
 import asyncio
 import logging
@@ -24,17 +14,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CollectedPost:
     external_id: str
-    """ID первого (или единственного) сообщения альбома/поста — стабилен
-    для одной публикации, т.к. альбом всегда группируется целиком."""
     all_message_ids: list[int]
     text: str
     published_at: datetime
     edited_at: datetime | None
     original_url: str
     media_refs: list[tuple[str, str]]
-    """[(source_ref, media_type)]. source_ref — стабильная строка вида
-    'channel:message_id:media_id', позволяющая повторно скачать
-    вложение через Telethon, даже если прямой URL не хранится."""
     reactions_count: int | None
     comments_count: int | None
     forwarded_from_url: str | None
@@ -58,11 +43,6 @@ class TelegramCollector:
         reverse: bool = False,
         offset_date: datetime | None = None,
     ):
-        """Итерирует сообщения, группируя альбомы по grouped_id. Границы
-        страниц Telethon учитываются встроенным итератором (iter_messages
-        сам пагинирует), группировка происходит на уровне выдачи наружу:
-        сообщения одного grouped_id копятся, пока не встретится сообщение с
-        другим grouped_id или None (альбом считается закрытым только тогда)."""
 
         pending_group: list[Message] = []
         pending_group_id: int | None = None
@@ -96,7 +76,6 @@ class TelegramCollector:
         try:
             return await self._build_collected_post(messages)
         except Exception:
-            # None позволяет продолжить обход, но запрещает sync перескакивать курсором через ошибку.
             logger.exception("telegram post collection failed for %s", [m.id for m in messages])
             return None
 

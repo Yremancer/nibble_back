@@ -1,19 +1,11 @@
-"""Привязка извлечённых названий к существующим справочникам (species,
-spots, fishing_methods) по name + aliases.
-
-LLM может предложить название места, но не координаты и не выбор конкретной
-бухты из общего упоминания (см. ТЗ, раздел 5). Если совпадение неоднозначно
-(несколько кандидатов) или отсутствует, название сохраняется как кандидат
-(agg_unresolved_candidates), а не создаётся фиктивная запись.
-"""
 
 import re
 import unicodedata
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.geo import Spot
-from src.models.species import FishingMethod, Species
+from src.spot.models import Spot
+from src.species.models import FishingMethod, Species
 
 
 def _normalize_name(name: str) -> str:
@@ -23,8 +15,6 @@ def _normalize_name(name: str) -> str:
 
 
 class DictionaryResolver:
-    """Загружает справочники один раз за запуск и матчит по нормализованному
-    имени + алиасам. Не обращается к LLM — только точное/алиас-совпадение."""
 
     def __init__(self, session: AsyncSession):
         self._session = session

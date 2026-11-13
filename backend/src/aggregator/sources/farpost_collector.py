@@ -1,16 +1,3 @@
-"""Farpost сборщик: HTTP + HTML-парсер (selectolax), без браузера.
-
-Структура страниц подтверждена живым запросом (см. отчёт):
-- список: GET {base}/{city}/sport/fish/?page=N, windows-1251,
-  карточки `tr[data-doc-id]` -> `div[data-bulletin-id]`.
-- детальная карточка: GET {base}/{city}/sport/fish/<slug>-<id>.html,
-  текст описания в `[data-field="text"]`, цена в `[data-field="price"]`,
-  галерея в `img.image-gallery__big-image`, продавец в `.seller-summary`.
-
-Фарпост отдаёт windows-1251 и выставляет anti-bot cookies (ring/ring_session) —
-сессия httpx с cookie jar обязательна. 403/сетевые ошибки не считаются
-подтверждением снятия объявления (см. ТЗ, раздел 12).
-"""
 
 import asyncio
 import logging

@@ -1,13 +1,3 @@
-"""Разовый сбор спотов с fishing-vl.ru в spots.
-
-В отличие от Telegram/Farpost это не регулярная синхронизация (см. задачу:
-"споты один раз и все"), поэтому здесь нет очереди задач/курсоров обхода —
-только идемпотентный проход по всем местам с сохранением сырья в
-agg_raw_items (повторный запуск не создаёт дублей по source_key='fishing_vl'
-+ external_id=slug) и прямой записью в spots, когда координаты разрешены.
-Город по умолчанию берётся из первого города в cities (Владивосток), так как
-fishing-vl.ru целиком про Приморье рядом с Владивостоком; при отсутствии
-города запись остаётся кандидатом."""
 
 import hashlib
 import json
@@ -18,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import CandidateKind, RawItemKind
 from src.aggregator.repository import CandidateRepository, RawItemRepository
 from src.aggregator.sources.fishing_vl_collector import FishingVlCollector
-from src.models.geo import City, Spot
+from src.city.models import City
+from src.spot.models import Spot
 
 logger = logging.getLogger(__name__)
 

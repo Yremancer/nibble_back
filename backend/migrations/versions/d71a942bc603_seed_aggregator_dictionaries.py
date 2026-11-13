@@ -1,7 +1,7 @@
 """Seed minimal dictionaries used by the aggregator."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "d71a942bc603"
 down_revision = "c6e84a12d903"

@@ -1,9 +1,3 @@
-"""Контракт классификатора Telegram-постов.
-
-Текст поста — недоверенные данные: инструкции внутри публикации не должны
-менять это поведение. Все факты (даты, виды, количества) должны иметь
-подтверждение в исходнике (evidence); неизвестное — null/пустой список.
-"""
 
 from enum import StrEnum
 
@@ -40,7 +34,6 @@ class MethodMention(BaseModel):
 
 
 class ClassificationResult(BaseModel):
-    """Логический контракт ответа DeepSeek (см. ТЗ, раздел 9)."""
 
     decision: ClassificationDecision
     category: PostCategory | None = None
@@ -50,8 +43,6 @@ class ClassificationResult(BaseModel):
     summary: str | None = None
     location_mentions: list[LocationMention] = Field(default_factory=list)
     fishing_date: str | None = None
-    """Строка-дата или относительное выражение, если распознать однозначно
-    не удалось (разрешение относительных дат делает нормализатор, не LLM)."""
     event_date: str | None = None
     species: list[SpeciesMention] = Field(default_factory=list)
     methods: list[MethodMention] = Field(default_factory=list)

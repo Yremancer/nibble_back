@@ -1,9 +1,4 @@
-from src.auth.exceptions import (
-    AuthenticationError,
-    EmailAlreadyRegisteredError,
-    InvalidCityError,
-)
-from src.auth.repository import AuthRepository
+from src.auth.exceptions import AuthenticationError
 from src.auth.schemas import LoginRequest, RegisterRequest, TokenResponse
 from src.auth.security import (
     create_access_token,
@@ -11,32 +6,25 @@ from src.auth.security import (
     hash_password,
     verify_password,
 )
-from src.models.user import User, UserRole
 from src.settings import settings
+from src.user.models import User
+from src.user.service import UserService
 
 
 class AuthService:
-    def __init__(self, repo: AuthRepository):
-        self._repo = repo
+    def __init__(self, users: UserService):
+        self._users = users
 
     async def register(self, data: RegisterRequest) -> User:
-        email = str(data.email).lower()
-        if await self._repo.get_by_email(email) is not None:
-            raise EmailAlreadyRegisteredError
-        if not await self._repo.city_exists(data.city_id):
-            raise InvalidCityError
-        return await self._repo.add(
-            User(
-                email=email,
-                password_hash=await hash_password(data.password.get_secret_value()),
-                display_name=data.display_name,
-                city_id=data.city_id,
-                role=UserRole.USER,
-            )
+        return await self._users.create(
+            email=str(data.email),
+            password_hash=await hash_password(data.password.get_secret_value()),
+            display_name=data.display_name,
+            city_id=data.city_id,
         )
 
     async def login(self, data: LoginRequest) -> TokenResponse:
-        user = await self._repo.get_by_email(str(data.email).lower())
+        user = await self._users.get_by_email(str(data.email))
         hashed = user.password_hash if user is not None else None
         valid = await verify_password(data.password.get_secret_value(), hashed)
         if user is None or not valid:
@@ -47,7 +35,7 @@ class AuthService:
         )
 
     async def current_user(self, token: str) -> User:
-        user = await self._repo.get_by_id(decode_access_token(token))
+        user = await self._users.get_by_id(decode_access_token(token))
         if user is None:
             raise AuthenticationError
         return user

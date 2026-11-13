@@ -1,6 +1,3 @@
-"""Проверка правил дедупликации: короткий одинаковый текст сам по себе не
-достаточен (нет точного хеша => не дубль), а слабые совпадения не образуют
-автоматический кластер (сохраняются как uncertain, не duplicate)."""
 
 from datetime import datetime, timezone
 
@@ -61,10 +58,6 @@ async def test_exact_text_hash_marks_duplicate(session):
 
 @pytest.mark.asyncio
 async def test_short_common_text_alone_is_not_enough(session):
-    """Короткий нормализованный текст (<20 символов) не формирует
-    кандидатов через pg_trgm - короткое совпадение само по себе
-    недостаточно (см. ТЗ, правило 'короткий одинаковый текст не
-    достаточен')."""
     repo = RawItemRepository(session)
     other, _, _ = await repo.upsert_raw_item(
         kind="telegram_post", source_key="telegram:1", external_id="10",
@@ -89,8 +82,6 @@ async def test_short_common_text_alone_is_not_enough(session):
 
 @pytest.mark.asyncio
 async def test_uncertain_candidates_recorded_not_auto_merged(session):
-    """A-B похожий текст без общих медиа -> решение uncertain, не duplicate.
-    Слабое совпадение не должно автоматически объединять записи."""
     repo = RawItemRepository(session)
     text_a = "Сегодня отличная рыбалка на Русском острове у бухты, поймал терпуга хорошего размера"
     item_a, _, _ = await repo.upsert_raw_item(

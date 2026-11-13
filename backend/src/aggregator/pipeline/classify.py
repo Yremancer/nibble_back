@@ -1,7 +1,3 @@
-"""Этап классификации: берёт текущую версию содержимого, проверяет кеш
-(agg_classifications по content_version_id+model+prompt_version), иначе
-зовёт DeepSeek. Сбой/таймаут/невалидный JSON не удаляют публикацию —
-задача остаётся для повтора (retry-failed --stage classify)."""
 
 import logging
 
@@ -9,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import ProcessingStage
 from src.aggregator.repository import ClassificationRepository, RawItemRepository, TaskRepository
 from src.llm.client import DeepSeekClient
+from src.llm.exceptions import LlmError
 from src.llm.prompts import load_prompt
 from src.llm.schemas import ClassificationResult
 from src.llm.settings import LlmSettings
@@ -88,7 +85,11 @@ async def process_classify_tasks(
                 if result.decision.value != "discard":
                     await tasks_repo.enqueue(task.raw_item_id, ProcessingStage.RESOLVE)
                 done += 1
-        except Exception as exc:  # noqa: BLE001 - не терять задачу при любой ошибке
+        except LlmError as exc:
+            await session.refresh(task)
+            await tasks_repo.mark_failed(task, str(exc))
+            failed += 1
+        except Exception as exc:  # noqa: BLE001
             logger.exception("classify stage failed for raw_item %s", raw_item_id)
             await session.refresh(task)
             await tasks_repo.mark_failed(task, str(exc))

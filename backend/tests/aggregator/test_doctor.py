@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 import telethon
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from src.aggregator import doctor
 from src.aggregator.cli import main
@@ -13,13 +15,15 @@ from src.aggregator.config import AggregatorSettings, SourcesConfig, TelegramSou
 
 @pytest.fixture
 def dependencies(monkeypatch):
+    heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+
     class Session:
         def begin_nested(self):
             return session_context()
 
         async def execute(self, statement):
             if "alembic_version" in str(statement):
-                return SimpleNamespace(scalars=lambda: ["d71a942bc603"])
+                return SimpleNamespace(scalars=lambda: heads)
 
     @asynccontextmanager
     async def session_context():

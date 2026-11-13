@@ -1,7 +1,3 @@
-"""Этап привязки к справочникам: превращает результат классификации
-(species/methods/location_mentions по именам) в подтверждённые id, либо
-кандидатов для ручной модерации. Неоднозначность (несколько кандидатов или
-общее упоминание без точного совпадения) не выбирает место/вид наугад."""
 
 import logging
 
@@ -40,8 +36,6 @@ async def resolve_classification(
 
     if len(spot_candidates) == 1:
         resolved.spot_id = next(iter(spot_candidates))
-    # несколько разных подтверждённых мест или ни одного - не выбираем
-    # автоматически, оставляем spot_id пустым (см. ТЗ, раздел 5).
 
     method_candidates: set[int] = set()
     for mention in result.methods:

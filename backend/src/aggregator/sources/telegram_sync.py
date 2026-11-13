@@ -1,11 +1,3 @@
-"""Запуск синхронизации Telegram: поддерживает incremental (sync) и
-backfill (backfill --since) режимы с раздельными курсорами.
-
-shortcut: один процесс на файл сессии, без файловой блокировки — если нужно
-запускать несколько источников параллельно, завести отдельные сессии на
-канал. Upgrade: добавить lock-файл или семафор в БД при реальной
-конкурентности.
-"""
 
 import logging
 from datetime import datetime, timedelta, timezone

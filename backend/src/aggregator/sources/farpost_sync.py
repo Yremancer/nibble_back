@@ -1,4 +1,3 @@
-"""Обход свежих страниц и истории Фарпоста с сохранением прогресса."""
 
 import hashlib
 import json
@@ -12,7 +11,7 @@ from src.aggregator.config import aggregator_settings
 from src.aggregator.models import ProcessingStage, RawItemKind
 from src.aggregator.repository import CursorRepository, MediaAttachmentRepository, RawItemRepository, TaskRepository
 from src.aggregator.sources.farpost_collector import FarpostCollector, FarpostHttpError
-from src.models.geo import City
+from src.city.models import City
 from src.models.listing import ListingState
 from src.models.tackle import TackleCategory
 

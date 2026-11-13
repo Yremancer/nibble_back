@@ -5,7 +5,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models import City, Spot
+from src.city.models import City
+from src.spot.models import Spot
 from src.weather.client import WeatherData
 from src.weather.models import WeatherCurrent, WeatherForecast
 

@@ -1,6 +1,7 @@
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg import sql
 
 from src.settings import settings
@@ -37,7 +38,8 @@ def prepare_legacy(db):
 
 def test_fresh_install(migration_db):
     command.upgrade(Config("alembic.ini"), "head")
-    assert migration_db.execute("SELECT version_num FROM alembic_version").fetchone() == ("d71a942bc603",)
+    head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    assert migration_db.execute("SELECT version_num FROM alembic_version").fetchone() == (head,)
     assert migration_db.execute("SELECT count(*) FROM files").fetchone() == (0,)
     assert migration_db.execute("SELECT count(*) FROM species").fetchone() == (6,)
     assert migration_db.execute("SELECT count(*) FROM fishing_methods").fetchone() == (6,)

@@ -3,17 +3,16 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.auth.exceptions import AuthenticationError
-from src.auth.repository import AuthRepository
 from src.auth.service import AuthService
-from src.database.deps import SessionDep
 from src.exceptions import ForbiddenError
-from src.models.user import User, UserRole
+from src.user.deps import UserServiceDep
+from src.user.models import User, UserRole
 
 BEARER_AUTH = HTTPBearer(auto_error=False)
 
 
-def get_auth_service(session: SessionDep) -> AuthService:
-    return AuthService(AuthRepository(session))
+def get_auth_service(users: UserServiceDep) -> AuthService:
+    return AuthService(users)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

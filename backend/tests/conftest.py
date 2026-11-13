@@ -1,10 +1,3 @@
-"""Тестовая сессия БД: каждый тест выполняется в транзакции, которая
-откатывается после теста (используется уже применённая миграция реальной
-dev-базы, без отдельной тестовой БД — см. ponytail: не плодить
-инфраструктуру ради тестов).
-
-Движок создаётся заново в каждом тесте с NullPool: пул asyncpg привязан к
-event loop, а pytest-asyncio создаёт новый loop на каждый тест."""
 
 from uuid import uuid4
 
@@ -14,7 +7,7 @@ import pytest_asyncio
 from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
-from src.models import *  # noqa: F401,F403 - регистрирует все ORM-модели
+from src.database import all as models  # noqa: F401
 from src.settings import settings
 
 
