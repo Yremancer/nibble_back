@@ -1,6 +1,4 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from src.species.deps import SpeciesServiceDep
 from src.species.schemas import FishingMethodOut, Season, SpeciesOut, SpeciesShort
 
@@ -10,7 +8,7 @@ router = APIRouter(tags=["species"])
 @router.get("/species", response_model=list[SpeciesShort])
 async def list_species(
     service: SpeciesServiceDep,
-    q: Annotated[str | None, Query(max_length=100)] = None,
+    q: str | None = None,
     season: Season | None = None,
 ):
     return await service.list_species(q, season)

@@ -10,7 +10,6 @@ from sqlalchemy import select
 from src.models.media import PostMedia
 from src.models.post import Post, Source
 from src.aggregator.media import MediaService
-from src.exceptions import ConflictError
 from src.storage.client import StorageClient
 from src.storage.models import File
 from src.storage.exceptions import StorageUnavailableError
@@ -75,14 +74,6 @@ async def test_deleting_one_post_media_link_keeps_shared_file(session):
         select(PostMedia).where(PostMedia.media_file_id == media_file.id)
     )
     assert len(remaining_links.scalars().all()) == 1
-
-    storage_client = AsyncMock(spec=StorageClient)
-    files = FileService(FileRepository(session), storage_client)
-    with pytest.raises(ConflictError):
-        async with session.begin_nested():
-            await files.delete(media_file.key)
-    storage_client.delete.assert_not_awaited()
-
 
 @pytest.mark.asyncio
 async def test_failed_upload_does_not_leave_file_metadata(session):

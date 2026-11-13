@@ -1,0 +1,4 @@
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_TYPE = "access"
+JWT_REQUIRED_CLAIMS = ("sub", "iat", "exp", "type")
+JWT_SECRET_MIN_LENGTH = 32
