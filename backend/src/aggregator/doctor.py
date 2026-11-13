@@ -53,7 +53,18 @@ async def cmd_doctor() -> int:
     if not channels:
         print("[SKIP] Telegram: нет активных каналов в sources.json")
     elif not aggregator_settings.is_telegram_configured:
-        fail("Telegram", "задайте TELEGRAM_API_ID/TELEGRAM_API_HASH и выполните auth-telegram")
+        from src.aggregator.sources.telegram_public import PublicTelegramCollector
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            for source in channels:
+                try:
+                    collector = PublicTelegramCollector(client, source.channel)
+                    await collector.resolve_channel_id()
+                    async for _ in collector.iter_history(reverse=True):
+                        break
+                    print(f"[OK] Telegram {source.channel}: веб-превью доступно без API credentials")
+                except Exception as exc:  # noqa: BLE001
+                    fail(f"Telegram {source.channel}", f"веб-превью недоступно ({type(exc).__name__}); нужен открытый канал с username")
     else:
         from telethon import TelegramClient
 

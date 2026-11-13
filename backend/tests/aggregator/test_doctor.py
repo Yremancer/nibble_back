@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 import telethon
 
@@ -104,3 +105,17 @@ def test_session_directory_is_created(tmp_path):
     config = AggregatorSettings(_env_file=None, TELEGRAM_SESSION_PATH=str(path))
     assert config.prepare_telegram_session() == str(path)
     assert path.parent.is_dir()
+
+
+@pytest.mark.parametrize("unavailable", [False, True])
+async def test_doctor_checks_public_previews_without_credentials(dependencies, monkeypatch, respx_mock, unavailable):
+    telegram, _, _ = dependencies
+    monkeypatch.setattr(doctor.aggregator_settings, "TELEGRAM_API_ID", 0)
+    html = '''<div class="tgme_widget_message" data-post="CHANNEL/1" data-view="eyJjIjotMTIzfQ">
+      <a class="tgme_widget_message_date"><time datetime="2026-11-12T10:00:00+00:00"></time></a>
+    </div>'''
+    for channel in ("one", "two"):
+        content = "<html>Unavailable</html>" if unavailable and channel == "two" else html.replace("CHANNEL", channel)
+        respx_mock.get(f"https://t.me/s/{channel}").mock(return_value=httpx.Response(200, text=content))
+    assert await doctor.cmd_doctor() == int(unavailable)
+    telegram.connect.assert_not_awaited()

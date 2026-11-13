@@ -3,11 +3,13 @@
 вложению не блокирует остальные и не блокирует последующую публикацию поста
 без медиа-вложений, если они были необязательны."""
 
+import asyncio
 import logging
 from urllib.parse import urlsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import AggRawItem, ProcessingStage
+from src.aggregator.config import aggregator_settings
 from src.aggregator.repository import MediaAttachmentRepository, TaskRepository
 from src.aggregator.media import MediaService
 
@@ -27,6 +29,7 @@ async def process_media_tasks(
         raw_item_id = task.raw_item_id
         try:
             async with session.begin_nested():
+                raw_item = await session.get(AggRawItem, raw_item_id)
                 attachments = await attachments_repo.pending_for_item(raw_item_id)
                 errors = []
                 for attachment in attachments:
@@ -34,6 +37,8 @@ async def process_media_tasks(
                     try:
                         async with session.begin_nested():
                             if urlsplit(attachment.source_ref).scheme in ("http", "https"):
+                                if raw_item.kind == "farpost_listing":
+                                    await asyncio.sleep(aggregator_settings.FARPOST_REQUEST_DELAY_S)
                                 media_file = await media_service.store_from_url(attachment.source_ref)
                             else:
                                 media_file = await media_service.store_from_telegram(attachment.source_ref)

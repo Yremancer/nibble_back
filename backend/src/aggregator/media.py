@@ -9,6 +9,7 @@ from telethon import TelegramClient
 from src.aggregator.exceptions import DownloadError
 from src.aggregator.safe_fetch import download_to_file
 from src.aggregator.sources.telegram_collector import TelegramCollector
+from src.aggregator.sources.telegram_public import PublicTelegramCollector
 from src.storage.exceptions import FileTooLargeError
 from src.storage.mime import EXTENSIONS
 from src.storage.models import File
@@ -34,6 +35,11 @@ class MediaService:
         self._telegram = telegram
 
     async def store_from_telegram(self, source_ref: str) -> File:
+        if source_ref.startswith("tgweb:"):
+            _, channel, message_id, index = source_ref.split(":")
+            collector = PublicTelegramCollector(self._http, channel)
+            url = await collector.media_url(int(message_id), int(index))
+            return await self.store_from_url(url)
         if self._telegram is None:
             raise DownloadError("Telegram client is not configured")
         if not self._telegram.is_connected():

@@ -5,7 +5,7 @@
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -148,28 +148,34 @@ async def cmd_backfill(source: str, since, limit: int | None, pages: int | None,
 
 
 async def _run_telegram_sync(mode: str, since, limit: int | None, channel: str | None = None) -> dict:
-    if not aggregator_settings.is_telegram_configured:
-        return {"error": "TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы"}
-
     from telethon import TelegramClient
 
     from src.aggregator.sources.telegram_sync import sync_telegram_source
 
     sources_config = load_sources_config()
+    if mode == "sync" and since is None:
+        from datetime import datetime, timedelta, timezone
+
+        since = datetime.now(timezone.utc) - timedelta(hours=aggregator_settings.AGG_RECHECK_WINDOW_HOURS)
     sources = [source for source in sources_config.telegram if source.is_active and (channel is None or source.channel == channel)]
     if channel is not None and not sources:
         raise ValueError(f"активный канал {channel} не найден в sources.json")
-    client = TelegramClient(
-        aggregator_settings.prepare_telegram_session(),
-        aggregator_settings.TELEGRAM_API_ID,
-        aggregator_settings.TELEGRAM_API_HASH,
-    )
     all_stats = {}
-    try:
-        async with asyncio.timeout(30):
-            await client.connect()
-            if not await client.is_user_authorized():
-                return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
+    async with AsyncExitStack() as stack:
+        if aggregator_settings.is_telegram_configured:
+            client = TelegramClient(
+                aggregator_settings.prepare_telegram_session(),
+                aggregator_settings.TELEGRAM_API_ID,
+                aggregator_settings.TELEGRAM_API_HASH,
+            )
+            stack.push_async_callback(client.disconnect)
+            async with asyncio.timeout(30):
+                await client.connect()
+                if not await client.is_user_authorized():
+                    return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
+        else:
+            logger.info("Telegram: чтение публичных веб-превью без API credentials")
+            client = await stack.enter_async_context(_http_client())
         for tg_source in sources:
             try:
                 async with async_session_maker() as session:
@@ -182,9 +188,6 @@ async def _run_telegram_sync(mode: str, since, limit: int | None, channel: str |
             except Exception:
                 logger.exception("telegram sync failed for %s", tg_source.channel)
                 all_stats[tg_source.channel] = {"errors": 1}
-    finally:
-        await client.disconnect()
-
     return all_stats
 
 
@@ -283,8 +286,6 @@ async def _scheduled_pass(*, sync_due: bool) -> dict:
             missing.append("DEEPSEEK_API_KEY")
         if not (settings.S3_BUCKET and settings.S3_ACCESS_KEY_ID and settings.S3_SECRET_ACCESS_KEY):
             missing.append("S3 credentials")
-        if sync_due and not aggregator_settings.is_telegram_configured:
-            missing.append("TELEGRAM_API_ID/TELEGRAM_API_HASH")
         if missing:
             stats["error"] = "не настроены: " + ", ".join(missing)
             logger.error("schedule: %s", stats["error"])
@@ -450,7 +451,8 @@ async def cmd_status() -> None:
         "pending_tasks": pending_counts,
         "failed_tasks": failed_counts,
         "last_runs": [
-            {"source_key": r.source_key, "command": r.command, "status": r.status}
+            {"id": r.id, "source_key": r.source_key, "command": r.command, "status": r.status,
+             "started_at": r.started_at, "finished_at": r.finished_at, "stats": r.stats, "error": r.error}
             for r in last_runs
         ],
     }

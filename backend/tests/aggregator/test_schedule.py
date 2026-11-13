@@ -39,10 +39,18 @@ async def test_scheduler_collects_on_tick_and_retries_between_ticks(scheduler, s
     assert stats["pipeline"]["publish"]["done"] == 1
 
 
-async def test_missing_configuration_is_visible_without_consuming_task_attempts(scheduler, monkeypatch):
+async def test_schedule_can_collect_without_telegram_credentials(scheduler, monkeypatch):
     monkeypatch.setattr(commands.aggregator_settings, "TELEGRAM_API_ID", None)
     stats = await commands._scheduled_pass(sync_due=True)
-    assert "TELEGRAM_API_ID" in stats["error"]
+    assert "error" not in stats
+    commands._run_telegram_sync.assert_awaited_once()
+    commands._drain_pipeline.assert_awaited_once()
+
+
+async def test_missing_configuration_is_visible_without_consuming_task_attempts(scheduler, monkeypatch):
+    monkeypatch.setattr(commands.llm_settings, "DEEPSEEK_API_KEY", None)
+    stats = await commands._scheduled_pass(sync_due=True)
+    assert "DEEPSEEK_API_KEY" in stats["error"]
     assert commands._has_errors(stats)
     commands._run_telegram_sync.assert_not_awaited()
     commands._drain_pipeline.assert_not_awaited()

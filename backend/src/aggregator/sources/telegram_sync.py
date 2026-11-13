@@ -10,6 +10,7 @@ shortcut: один процесс на файл сессии, без файло�
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient
@@ -22,6 +23,7 @@ from src.aggregator.config import (
 from src.aggregator.pipeline.ingest import ingest_telegram_post
 from src.aggregator.repository import CursorRepository
 from src.aggregator.sources.telegram_collector import CollectedPost, TelegramCollector
+from src.aggregator.sources.telegram_public import PublicTelegramCollector
 from src.models.post import Source, SourceType
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ async def ensure_source(session: AsyncSession, cfg: TelegramSourceConfig, channe
 
 async def sync_telegram_source(
     session: AsyncSession,
-    client: TelegramClient,
+    client: TelegramClient | httpx.AsyncClient,
     cfg: TelegramSourceConfig,
     sources_config: SourcesConfig,
     *,
@@ -61,7 +63,15 @@ async def sync_telegram_source(
     since: datetime | None,
     limit: int | None,
 ) -> dict:
-    collector = TelegramCollector(client, cfg.channel)
+    if isinstance(client, httpx.AsyncClient):
+        public_since = None
+        if mode == "backfill":
+            public_since = since or datetime.now(timezone.utc) - timedelta(
+                days=aggregator_settings.AGG_BACKFILL_DEPTH_DAYS,
+            )
+        collector = PublicTelegramCollector(client, cfg.channel, since=public_since)
+    else:
+        collector = TelegramCollector(client, cfg.channel)
     channel_id = await collector.resolve_channel_id()
     source = await ensure_source(session, cfg, channel_id)
 
@@ -116,7 +126,8 @@ async def sync_telegram_source(
             return False
 
     try:
-        async for collected in collector.iter_history(min_id=min_id, reverse=True):
+        offset_date = since if mode == "sync" and not cursor else None
+        async for collected in collector.iter_history(min_id=min_id, reverse=True, offset_date=offset_date):
             if (
                 collected is not None and since is not None
                 and collected.published_at < since and mode == "backfill"

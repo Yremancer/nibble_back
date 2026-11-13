@@ -68,6 +68,32 @@ async def test_small_limit_drains_history_without_splitting_album(session):
 
 
 @pytest.mark.asyncio
+async def test_initial_sync_starts_with_recent_posts_and_backfill_uses_separate_cursor(session):
+    cutoff = datetime(2026, 11, 10, tzinfo=timezone.utc)
+    messages = [message(1, date=cutoff - timedelta(days=30)), message(2, date=cutoff + timedelta(days=1))]
+    client = client_for(messages)
+    history = client.iter_messages
+    offsets = []
+
+    async def filtered(channel, *, min_id=0, max_id=0, reverse=False, offset_date=None):
+        offsets.append(offset_date)
+        async for item in history(channel, min_id=min_id, max_id=max_id, reverse=reverse):
+            if offset_date is None or item.date > offset_date:
+                yield item
+
+    client.iter_messages = filtered
+    cfg = TelegramSourceConfig(name="test", channel="sync_test")
+    await telegram_sync.sync_telegram_source(session, client, cfg, SourcesConfig(), mode="sync", since=cutoff, limit=2)
+    assert list(await session.scalars(select(AggRawItem.external_id).where(AggRawItem.source_key == "telegram:987654321"))) == ["2"]
+    assert offsets == [cutoff]
+    await telegram_sync.sync_telegram_source(session, client, cfg, SourcesConfig(), mode="backfill", since=None, limit=2)
+    assert set(await session.scalars(select(AggRawItem.external_id).where(AggRawItem.source_key == "telegram:987654321"))) == {"1", "2"}
+    repo = CursorRepository(session)
+    assert (await repo.get("telegram:987654321", "incremental"))["last_message_id"] == 2
+    assert (await repo.get("telegram:987654321", "backfill"))["last_message_id"] == 2
+
+
+@pytest.mark.asyncio
 async def test_failed_record_rolls_back_and_blocks_cursor_but_not_later_records(session, monkeypatch):
     original = telegram_sync.ingest_telegram_post
 
@@ -152,7 +178,7 @@ async def test_one_failed_channel_does_not_roll_back_other_channels(monkeypatch)
     monkeypatch.setattr(telethon, "TelegramClient", MagicMock(return_value=client))
     monkeypatch.setattr(commands, "aggregator_settings", SimpleNamespace(
         is_telegram_configured=True, prepare_telegram_session=lambda: "unused",
-        TELEGRAM_API_ID=1, TELEGRAM_API_HASH="test",
+        TELEGRAM_API_ID=1, TELEGRAM_API_HASH="test", AGG_RECHECK_WINDOW_HOURS=72,
     ))
     monkeypatch.setattr(commands, "load_sources_config", lambda: SourcesConfig(telegram=[
         TelegramSourceConfig(name=name, channel=name) for name in ("first", "bad", "last")

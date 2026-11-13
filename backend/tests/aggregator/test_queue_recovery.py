@@ -88,6 +88,26 @@ asyncio.run(main())
     assert last_stats["pipeline"]["publish"] == {"done": 451, "failed": 0}
 
 
+def test_advisory_lock_rejects_overlapping_process_and_errors_are_journaled(migration_db):
+    command.upgrade(Config("alembic.ini"), "head")
+    env = {**os.environ, "DB_NAME": settings.DB_NAME}
+    migration_db.execute("SELECT pg_advisory_lock(731912, 2)")
+    try:
+        result = subprocess.run([
+            sys.executable, "-m", "src.aggregator.cli", "sync", "--source", "telegram", "--limit", "1",
+        ], env=env, capture_output=True, text=True, timeout=15)
+        assert result.returncode != 0 and "другая команда агрегатора" in result.stderr
+        assert migration_db.execute("SELECT count(*) FROM agg_runs").fetchone() == (0,)
+    finally:
+        migration_db.execute("SELECT pg_advisory_unlock(731912, 2)")
+    result = subprocess.run([
+        sys.executable, "-m", "src.aggregator.cli", "reprocess", "--stage", "publish", "--limit", "0",
+    ], env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0
+    status, error = migration_db.execute("SELECT status, error FROM agg_runs").fetchone()
+    assert status == "failed" and "положительным" in error
+
+
 @pytest.mark.asyncio
 async def test_retry_delay_attempt_limit_manual_reset_and_old_claim(session):
     await session.execute(update(AggProcessingTask).values(available_at=datetime.now(timezone.utc) + timedelta(days=365)))

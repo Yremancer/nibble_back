@@ -56,6 +56,7 @@ class TelegramCollector:
         min_id: int = 0,
         max_id: int = 0,
         reverse: bool = False,
+        offset_date: datetime | None = None,
     ):
         """Итерирует сообщения, группируя альбомы по grouped_id. Границы
         страниц Telethon учитываются встроенным итератором (iter_messages
@@ -66,8 +67,9 @@ class TelegramCollector:
         pending_group: list[Message] = []
         pending_group_id: int | None = None
 
+        options = {"offset_date": offset_date} if offset_date is not None else {}
         async for message in self._client.iter_messages(
-            self._channel, min_id=min_id, max_id=max_id, reverse=reverse
+            self._channel, min_id=min_id, max_id=max_id, reverse=reverse, **options
         ):
             if not isinstance(message, Message):
                 continue

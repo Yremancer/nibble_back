@@ -1,10 +1,12 @@
 import httpx
-from src.aggregator.exceptions import FarpostUnavailableError
+from src.aggregator.exceptions import DownloadError, FarpostUnavailableError, TelegramUnavailableError
+from src.aggregator.schemas import TelegramPostPreview
 from src.aggregator.sources.farpost_collector import (
     FarpostCollector,
     FarpostHttpError,
     ListingDetail,
 )
+from src.aggregator.sources.telegram_public import PublicTelegramCollector
 
 
 class FarpostService:
@@ -39,4 +41,28 @@ class FarpostService:
             raise FarpostUnavailableError("Истекло время ожидания ответа Farpost") from exc
         except httpx.HTTPError as exc:
             raise FarpostUnavailableError from exc
+        return items
+
+
+class TelegramService:
+    def __init__(self, collector: PublicTelegramCollector):
+        self._collector = collector
+
+    async def preview(self, limit: int) -> list[TelegramPostPreview]:
+        items = []
+        seen = set()
+        try:
+            async for post in self._collector.iter_preview():
+                if post.external_id in seen:
+                    continue
+                seen.add(post.external_id)
+                items.append(post)
+                if len(items) == limit:
+                    break
+        except httpx.TimeoutException as exc:
+            raise TelegramUnavailableError("Истекло время ожидания ответа Telegram") from exc
+        except httpx.HTTPStatusError as exc:
+            raise TelegramUnavailableError(f"Telegram вернул HTTP {exc.response.status_code}") from exc
+        except (httpx.HTTPError, DownloadError, ValueError, KeyError, AttributeError) as exc:
+            raise TelegramUnavailableError from exc
         return items

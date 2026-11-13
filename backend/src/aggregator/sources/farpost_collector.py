@@ -79,6 +79,9 @@ class FarpostCollector:
     async def _get(self, url: str, *, params: dict | None = None) -> httpx.Response:
         async with self._request_lock:
             for _ in range(6):
+                parsed = urlsplit(url)
+                if parsed.scheme not in ("http", "https") or parsed.hostname != urlsplit(self._base_url).hostname or parsed.username:
+                    raise FarpostHttpError(403, url, "ссылка за пределами источника")
                 await asyncio.sleep(max(0, self._next_request_at - monotonic()))
                 try:
                     response = await self._client.get(
@@ -204,7 +207,8 @@ class FarpostCollector:
                 items = entry.get("itemListElement", [])
                 if entry.get("@type") == "BreadcrumbList" and items:
                     breadcrumb = items[-1].get("name")
-                address = entry.get("address") or (entry.get("location") or {}).get("address")
+                location = entry.get("location")
+                address = entry.get("address") or (location.get("address") if isinstance(location, dict) else None)
                 if isinstance(address, dict):
                     city_name = address.get("addressLocality") or city_name
 

@@ -13,3 +13,8 @@ class UnsafeUrlError(DownloadError):
 class FarpostUnavailableError(AppError):
     status_code = 502
     detail = "Не удалось получить объявления Farpost"
+
+
+class TelegramUnavailableError(AppError):
+    status_code = 502
+    detail = "Не удалось получить публикации Telegram"
