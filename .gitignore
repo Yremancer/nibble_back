@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code: личное
+.claude/settings.local.json
+CLAUDE.local.md
+
+# macOS
+.DS_Store
+.claude/skills/
