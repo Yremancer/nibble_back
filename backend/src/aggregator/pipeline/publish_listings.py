@@ -21,44 +21,44 @@ async def publish_pending_listings(session: AsyncSession, raw_item_ids: list[int
 
     for raw_item_id in raw_item_ids:
         try:
-            raw_item: AggRawItem | None = await session.get(AggRawItem, raw_item_id)
-            if raw_item is None or raw_item.kind != "farpost_listing":
-                continue
+            async with session.begin_nested():
+                raw_item: AggRawItem | None = await session.get(AggRawItem, raw_item_id)
+                if raw_item is None or raw_item.kind != "farpost_listing":
+                    continue
 
-            payload = raw_item.raw_payload
-            listing, _ = await listing_writer.upsert(
-                farpost_id=payload["farpost_id"],
-                category_id=payload.get("category_id"),
-                city_id=payload.get("city_id"),
-                title=payload["title"],
-                description=payload.get("description"),
-                price_rub=payload.get("price_rub"),
-                price_raw=payload.get("price_raw"),
-                photo_url=(payload.get("photo_urls") or [None])[0],
-                url=payload["url"],
-                seller_name=payload.get("seller_name"),
-                seller_url=payload.get("seller_url"),
-                characteristics=payload.get("characteristics"),
-                state=ListingState(payload.get("state", "unknown")),
-            )
+                payload = raw_item.raw_payload
+                listing, _ = await listing_writer.upsert(
+                    farpost_id=payload["farpost_id"],
+                    category_id=payload.get("category_id"),
+                    city_id=payload.get("city_id"),
+                    title=payload["title"],
+                    description=payload.get("description"),
+                    price_rub=payload.get("price_rub"),
+                    price_raw=payload.get("price_raw"),
+                    photo_url=(payload.get("photo_urls") or [None])[0],
+                    url=payload["url"],
+                    seller_name=payload.get("seller_name"),
+                    seller_url=payload.get("seller_url"),
+                    characteristics=payload.get("characteristics"),
+                    state=ListingState(payload.get("state", "unknown")),
+                )
 
-            if raw_item.listing_id is None:
-                await raw_items_repo.link_listing(raw_item.id, listing.id)
+                if raw_item.listing_id is None:
+                    await raw_items_repo.link_listing(raw_item.id, listing.id)
 
-            attachments = await attachments_repo.all_for_item(raw_item_id)
-            media_items = [
-                {
-                    "media_file_id": a.media_file_id,
-                    "type": a.media_type,
-                    "sort_order": a.attachment_index,
-                }
-                for a in attachments
-                if a.media_file_id is not None
-            ]
-            if media_items:
+                attachments = await attachments_repo.all_for_item(raw_item_id)
+                media_items = [
+                    {
+                        "media_file_id": a.media_file_id,
+                        "type": a.media_type,
+                        "sort_order": a.attachment_index,
+                    }
+                    for a in attachments
+                    if a.media_file_id is not None
+                ]
                 await media_writer.set_media(listing.id, media_items)
 
-            done += 1
+                done += 1
         except Exception:
             logger.exception("publish listing failed for raw_item %s", raw_item_id)
             failed += 1

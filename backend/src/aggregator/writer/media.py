@@ -3,6 +3,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.listing import ListingMedia
 from src.models.media import PostMedia
+from src.models.post import Post
 
 
 class PostMediaWriter:
@@ -12,7 +13,11 @@ class PostMediaWriter:
     async def set_media(
         self, post_id: int, items: list[dict]
     ) -> None:
+        post = await self._session.get(Post, post_id)
+        if post is None or "media" in (post.managed_fields or {}):
+            return
         await self._session.execute(delete(PostMedia).where(PostMedia.post_id == post_id))
+        self._session.expire(post, ["media"])
         for item in items:
             self._session.add(
                 PostMedia(

@@ -1,20 +1,21 @@
 
+import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from uuid import uuid4
 
 import httpx
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.config import aggregator_settings, load_sources_config
 from src.aggregator.models import ProcessingStage
-from src.database.database import async_session_maker
+from src.database.database import async_session_maker, engine
 from src.llm.client import DeepSeekClient
 from src.llm.settings import llm_settings
 from src.models.listing import Listing
 from src.models.post import Post
-from src.settings import settings
+from src.aggregator.doctor import cmd_doctor
 from src.storage.repository import FileRepository
 from src.storage.service import FileService
 from src.storage.setup import create_storage_client
@@ -34,98 +35,98 @@ async def cmd_auth_telegram() -> None:
     await run_telegram_auth()
 
 
-async def cmd_doctor() -> None:
-    print("=== Проверка конфигурации агрегатора (dry-run, доменные сущности не пишутся) ===")
-
-    async with async_session_maker() as session:
-        try:
-            await session.execute(text("SELECT 1"))
-            print("[OK] PostgreSQL: подключение работает")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] PostgreSQL: {exc}")
-
-    if aggregator_settings.is_telegram_configured:
-        try:
-            from telethon import TelegramClient
-
-            client = TelegramClient(
-                aggregator_settings.TELEGRAM_SESSION_PATH,
-                aggregator_settings.TELEGRAM_API_ID,
-                aggregator_settings.TELEGRAM_API_HASH,
-            )
-            await client.connect()
-            authorized = await client.is_user_authorized()
-            await client.disconnect()
-            if authorized:
-                print("[OK] Telegram: сессия авторизована")
-            else:
-                print("[WARN] Telegram: настроен, но сессия не авторизована (запустите auth-telegram)")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] Telegram: {exc}")
-    else:
-        print("[SKIP] Telegram: TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы")
-
-    if llm_settings.is_configured:
-        try:
-            async with _http_client() as http_client:
-                client = DeepSeekClient(llm_settings, http_client)
-                result, _ = await client.classify_post(
-                    "Ответь JSON: {\"decision\": \"keep\", \"reason\": \"ping\", "
-                    "\"is_advertisement\": false, \"needs_media_analysis\": false}",
-                    "ping",
-                )
-                print(f"[OK] DeepSeek: ответ получен, decision={result.decision.value}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] DeepSeek: {exc}")
-    else:
-        print("[SKIP] DeepSeek: DEEPSEEK_API_KEY не задан")
-
-    if settings.S3_BUCKET and settings.S3_ACCESS_KEY_ID and settings.S3_SECRET_ACCESS_KEY:
-        try:
-            async with create_storage_client() as client:
-                test_key = f"aggregator-doctor/{uuid4().hex}.txt"
-                await client.put(test_key, b"doctor check", content_type="text/plain")
-                try:
-                    exists = await client.get(test_key) == b"doctor check"
-                finally:
-                    await client.delete(test_key)
-            print(f"[OK] S3: тестовая запись/чтение/удаление успешны (exists={exists})")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] S3: {exc}")
-    else:
-        print("[SKIP] S3: настройки не заданы (готовится отдельно)")
-
-
 _PIPELINE_STAGES = [
+    ProcessingStage.NORMALIZE,
     ProcessingStage.CLASSIFY,
     ProcessingStage.RESOLVE,
-    ProcessingStage.DEDUP,
     ProcessingStage.MEDIA,
+    ProcessingStage.DEDUP,
     ProcessingStage.PUBLISH,
 ]
 
 
 async def _drain_pipeline(limit_per_stage: int = 200) -> dict:
+    from src.aggregator.repository import TaskRepository
+
+    async with async_session_maker() as session:
+        await TaskRepository(session).enqueue_missing_media()
+        await session.commit()
     stats = {}
-    for stage in _PIPELINE_STAGES:
-        stats[stage.value] = await _run_stage(stage, limit_per_stage)
-    return stats
+    while True:
+        processed = 0
+        for stage in _PIPELINE_STAGES:
+            batch = await _drain_stage(stage, limit_per_stage)
+            total = stats.setdefault(stage.value, {})
+            for key, value in batch.items():
+                total[key] = total.get(key, 0) + value
+                processed += value
+        if not processed:
+            return stats
 
 
-async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool) -> None:
+async def _drain_stage(stage: ProcessingStage, batch_size: int) -> dict:
+    if batch_size <= 0:
+        raise ValueError("размер пакета должен быть положительным")
+    total = {}
+    while True:
+        batch = await _run_stage(stage, batch_size)
+        for key, value in batch.items():
+            total[key] = total.get(key, 0) + value
+        if not any(batch.values()):
+            return total
+
+
+def _has_errors(stats: dict) -> bool:
+    return bool(stats.get("failed") or stats.get("errors") or stats.get("error")) or any(
+        _has_errors(value) for value in stats.values() if isinstance(value, dict)
+    )
+
+
+@asynccontextmanager
+async def command_run(source_key: str, command: str):
+    from src.aggregator.repository import RunRepository
+
+    async with engine.connect() as connection:
+        locked = await connection.scalar(text("SELECT pg_try_advisory_lock(731912, 2)"))
+        await connection.commit()
+        if not locked:
+            raise RuntimeError("другая команда агрегатора уже выполняется")
+        try:
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                repo = RunRepository(session)
+                await repo.interrupt_running()
+                run = await repo.start(source_key, command)
+                await session.commit()
+                stats = {}
+                try:
+                    yield stats
+                except BaseException as exc:
+                    await repo.finish(run, "failed", stats, str(exc) or type(exc).__name__)
+                    await session.commit()
+                    raise
+                else:
+                    await repo.finish(run, "failed" if _has_errors(stats) else "success", stats)
+                    await session.commit()
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(731912, 2)"))
+            await connection.commit()
+
+
+async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool, channel: str | None = None) -> dict:
     stats_all = {}
     if source in ("all", "telegram"):
-        stats_all["telegram"] = await _run_telegram_sync(mode="sync", since=None, limit=limit)
+        stats_all["telegram"] = await _run_telegram_sync(mode="sync", since=None, limit=limit, channel=channel)
     if source in ("all", "farpost"):
         stats_all["farpost"] = await _run_farpost_sync(max_pages=pages, max_listings=limit)
     if not dry_run:
         stats_all["pipeline"] = await _drain_pipeline()
     print(json.dumps(stats_all, ensure_ascii=False, indent=2, default=str))
+    return stats_all
 
 
-async def cmd_backfill(source: str, since, limit: int | None, pages: int | None) -> None:
+async def cmd_backfill(source: str, since, limit: int | None, pages: int | None, channel: str | None = None) -> dict:
     if source == "telegram":
-        stats = await _run_telegram_sync(mode="backfill", since=since, limit=limit)
+        stats = await _run_telegram_sync(mode="backfill", since=since, limit=limit, channel=channel)
     elif source == "farpost":
         stats = await _run_farpost_sync(max_pages=pages, max_listings=limit)
     elif source == "fishing_vl":
@@ -137,42 +138,50 @@ async def cmd_backfill(source: str, since, limit: int | None, pages: int | None)
         stats = {"ingest": stats, "pipeline": await _drain_pipeline()}
 
     print(json.dumps(stats, ensure_ascii=False, indent=2, default=str))
+    return stats
 
 
-async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
-    if not aggregator_settings.is_telegram_configured:
-        return {"error": "TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы"}
-
+async def _run_telegram_sync(mode: str, since, limit: int | None, channel: str | None = None) -> dict:
     from telethon import TelegramClient
 
     from src.aggregator.sources.telegram_sync import sync_telegram_source
 
     sources_config = load_sources_config()
-    client = TelegramClient(
-        aggregator_settings.TELEGRAM_SESSION_PATH,
-        aggregator_settings.TELEGRAM_API_ID,
-        aggregator_settings.TELEGRAM_API_HASH,
-    )
-    await client.connect()
-    if not await client.is_user_authorized():
-        await client.disconnect()
-        return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
+    if mode == "sync" and since is None:
+        from datetime import datetime, timedelta, timezone
 
+        since = datetime.now(timezone.utc) - timedelta(hours=aggregator_settings.AGG_RECHECK_WINDOW_HOURS)
+    sources = [source for source in sources_config.telegram if source.is_active and (channel is None or source.channel == channel)]
+    if channel is not None and not sources:
+        raise ValueError(f"активный канал {channel} не найден в sources.json")
     all_stats = {}
-    try:
-        async with async_session_maker() as session:
-            for tg_source in sources_config.telegram:
-                if not tg_source.is_active:
-                    continue
-                stats = await sync_telegram_source(
-                    session, client, tg_source, sources_config,
-                    mode=mode, since=since, limit=limit,
-                )
+    async with AsyncExitStack() as stack:
+        if aggregator_settings.is_telegram_configured:
+            client = TelegramClient(
+                aggregator_settings.prepare_telegram_session(),
+                aggregator_settings.TELEGRAM_API_ID,
+                aggregator_settings.TELEGRAM_API_HASH,
+            )
+            stack.push_async_callback(client.disconnect)
+            async with asyncio.timeout(30):
+                await client.connect()
+                if not await client.is_user_authorized():
+                    return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
+        else:
+            logger.info("Telegram: чтение публичных веб-превью без API credentials")
+            client = await stack.enter_async_context(_http_client())
+        for tg_source in sources:
+            try:
+                async with async_session_maker() as session:
+                    stats = await sync_telegram_source(
+                        session, client, tg_source, sources_config,
+                        mode=mode, since=since, limit=limit,
+                    )
+                    await session.commit()
                 all_stats[tg_source.channel] = stats
-            await session.commit()
-    finally:
-        await client.disconnect()
-
+            except Exception:
+                logger.exception("telegram sync failed for %s", tg_source.channel)
+                all_stats[tg_source.channel] = {"errors": 1}
     return all_stats
 
 
@@ -208,24 +217,118 @@ async def _run_fishing_vl_sync(limit: int | None) -> dict:
     return stats
 
 
-async def cmd_reprocess(stage: str, limit: int) -> None:
-    stats = await _run_stage(ProcessingStage(stage), limit)
+async def cmd_import_listings(input_path: str, city: str | None) -> dict:
+    from src.aggregator.sources.farpost_import import import_listings
+
+    async with async_session_maker() as session:
+        imported = await import_listings(session, Path(input_path), city=city)
+        await session.commit()
+    stats = {"import": imported, "pipeline": await _drain_pipeline()}
     print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
 
 
-async def cmd_retry_failed(stage: str, limit: int) -> None:
+async def cmd_reprocess(stage: str, limit: int) -> dict:
+    from src.aggregator.repository import TaskRepository
+
+    if limit <= 0:
+        raise ValueError("лимит должен быть положительным")
+    selected_stage = ProcessingStage(stage)
+    async with async_session_maker() as session:
+        requeued = await TaskRepository(session).requeue_stage(selected_stage, limit)
+        await session.commit()
+    stats = {"requeued": requeued, "pipeline": await _drain_pipeline()}
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
+
+
+async def cmd_retry_failed(stage: str, limit: int) -> dict:
     from src.aggregator.repository import TaskRepository
 
     async with async_session_maker() as session:
         tasks_repo = TaskRepository(session)
         requeued = await tasks_repo.claim_failed(ProcessingStage(stage), limit)
         await session.commit()
-    print(json.dumps({"requeued": len(requeued)}, ensure_ascii=False, indent=2))
+    stats = {"requeued": len(requeued), "pipeline": await _drain_pipeline()}
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
+
+
+async def cmd_worker() -> None:
+    from src.aggregator.repository import TaskRepository
+
+    first_pass = True
+    while True:
+        try:
+            async with async_session_maker() as session:
+                ready = await TaskRepository(session).has_ready()
+            if ready or first_pass:
+                async with command_run("pipeline", "worker") as stats:
+                    stats.update(await _drain_pipeline())
+                first_pass = False
+        except Exception:
+            logger.exception("pipeline worker pass failed")
+        await asyncio.sleep(5)
+
+
+async def _scheduled_pass(*, sync_due: bool) -> dict:
+    from src.settings import settings
+
+    async with command_run("telegram", "schedule" if sync_due else "worker") as stats:
+        missing = []
+        if not llm_settings.is_configured:
+            missing.append("DEEPSEEK_API_KEY")
+        if not (settings.S3_BUCKET and settings.S3_ACCESS_KEY_ID and settings.S3_SECRET_ACCESS_KEY):
+            missing.append("S3 credentials")
+        if missing:
+            stats["error"] = "не настроены: " + ", ".join(missing)
+            logger.error("schedule: %s", stats["error"])
+            return stats
+        if sync_due:
+            stats["telegram"] = await _run_telegram_sync(
+                mode="sync", since=None, limit=aggregator_settings.AGG_BATCH_SIZE,
+            )
+        stats["pipeline"] = await _drain_pipeline()
+        logger.info("schedule pass: %s", json.dumps(stats, ensure_ascii=False))
+        return stats
+
+
+async def cmd_schedule() -> None:
+    from time import monotonic
+    from src.aggregator.repository import TaskRepository
+
+    next_sync = 0.0
+    while True:
+        sync_due = monotonic() >= next_sync
+        try:
+            async with async_session_maker() as session:
+                ready = await TaskRepository(session).has_ready()
+            if sync_due or ready:
+                await _scheduled_pass(sync_due=sync_due)
+        except Exception:
+            logger.exception("scheduled pass failed")
+        finally:
+            if sync_due:
+                next_sync = monotonic() + aggregator_settings.AGG_SYNC_INTERVAL_S
+        await asyncio.sleep(5)
 
 
 async def _run_stage(stage: ProcessingStage, limit: int) -> dict:
+    from src.aggregator.repository import TaskRepository
+
     async with async_session_maker() as session:
-        if stage == ProcessingStage.CLASSIFY:
+        if not await TaskRepository(session).has_ready(stage):
+            stats = {"done": 0, "failed": 0}
+            if stage == ProcessingStage.CLASSIFY:
+                stats["skipped"] = 0
+            elif stage == ProcessingStage.DEDUP:
+                stats["duplicates"] = 0
+            return stats
+        if stage == ProcessingStage.NORMALIZE:
+            from src.aggregator.pipeline.normalize_stage import process_normalize_tasks
+
+            stats = await process_normalize_tasks(session, limit)
+        elif stage == ProcessingStage.CLASSIFY:
             from src.aggregator.pipeline.classify import process_classify_tasks
 
             async with _http_client() as http_client:
@@ -245,14 +348,27 @@ async def _run_stage(stage: ProcessingStage, limit: int) -> dict:
 
             async with _http_client() as http_client, create_storage_client() as storage_client:
                 files = FileService(FileRepository(session), storage_client)
-                media_service = MediaService(files, http_client)
-                stats = await process_media_tasks(session, media_service, limit)
+                telegram = None
+                if aggregator_settings.is_telegram_configured:
+                    from telethon import TelegramClient
+
+                    telegram = TelegramClient(
+                        aggregator_settings.prepare_telegram_session(),
+                        aggregator_settings.TELEGRAM_API_ID,
+                        aggregator_settings.TELEGRAM_API_HASH,
+                    )
+                try:
+                    media_service = MediaService(files, http_client, telegram)
+                    stats = await process_media_tasks(session, media_service, limit)
+                finally:
+                    if telegram is not None:
+                        await telegram.disconnect()
         elif stage == ProcessingStage.PUBLISH:
             from src.aggregator.pipeline.publish_stage import process_publish_tasks
 
             stats = await process_publish_tasks(session, limit)
         else:
-            stats = {"error": f"этап {stage} не поддерживает ручной запуск напрямую"}
+            raise ValueError(f"этап {stage} не поддерживает ручной запуск напрямую")
 
         await session.commit()
     return stats
@@ -329,7 +445,8 @@ async def cmd_status() -> None:
         "pending_tasks": pending_counts,
         "failed_tasks": failed_counts,
         "last_runs": [
-            {"source_key": r.source_key, "command": r.command, "status": r.status}
+            {"id": r.id, "source_key": r.source_key, "command": r.command, "status": r.status,
+             "started_at": r.started_at, "finished_at": r.finished_at, "stats": r.stats, "error": r.error}
             for r in last_runs
         ],
     }
