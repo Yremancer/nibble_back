@@ -7,3 +7,5 @@ uvicorn==0.35.0
 alembic
 asyncpg
 psycopg[binary]
+aioboto3
+python-multipart
