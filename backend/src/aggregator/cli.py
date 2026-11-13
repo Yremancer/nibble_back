@@ -62,16 +62,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    asyncio.run(dispatch(args))
+    raise SystemExit(asyncio.run(dispatch(args)))
 
 
-async def dispatch(args: argparse.Namespace) -> None:
+async def dispatch(args: argparse.Namespace) -> int | None:
     from src.aggregator import commands
 
     if args.command == "auth-telegram":
         await commands.cmd_auth_telegram()
     elif args.command == "doctor":
-        await commands.cmd_doctor()
+        return await commands.cmd_doctor()
     elif args.command == "sync":
         await commands.cmd_sync(
             source=args.source, limit=args.limit, pages=args.pages, dry_run=args.dry_run

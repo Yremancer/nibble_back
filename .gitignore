@@ -228,3 +228,5 @@ CLAUDE.local.md
 .claude/skills/
 
 dumps/
+*.session
+*.session-*

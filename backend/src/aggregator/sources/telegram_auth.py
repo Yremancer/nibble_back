@@ -15,11 +15,13 @@ async def run_telegram_auth() -> None:
         )
 
     client = TelegramClient(
-        aggregator_settings.TELEGRAM_SESSION_PATH,
+        aggregator_settings.prepare_telegram_session(),
         aggregator_settings.TELEGRAM_API_ID,
         aggregator_settings.TELEGRAM_API_HASH,
     )
-    await client.start(phone=lambda: aggregator_settings.TELEGRAM_PHONE or input("Телефон: "))
-    me = await client.get_me()
-    print(f"Авторизован как {me.first_name} ({me.phone}). Сессия сохранена.")
-    await client.disconnect()
+    try:
+        await client.start(phone=lambda: aggregator_settings.TELEGRAM_PHONE or input("Телефон: "))
+        me = await client.get_me()
+        print(f"Авторизован как {me.first_name} ({me.phone}). Сессия сохранена.")
+    finally:
+        await client.disconnect()

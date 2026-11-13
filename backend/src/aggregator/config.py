@@ -72,5 +72,10 @@ class AggregatorSettings(BaseSettings):
     def is_telegram_configured(self) -> bool:
         return bool(self.TELEGRAM_API_ID and self.TELEGRAM_API_HASH)
 
+    def prepare_telegram_session(self) -> str:
+        path = Path(self.TELEGRAM_SESSION_PATH).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
 
 aggregator_settings = AggregatorSettings()

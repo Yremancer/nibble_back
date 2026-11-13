@@ -6,7 +6,6 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import uuid4
 
 import httpx
 from sqlalchemy import select, text
@@ -17,7 +16,7 @@ from src.llm.client import DeepSeekClient
 from src.llm.settings import llm_settings
 from src.models.listing import Listing
 from src.models.post import Post
-from src.settings import settings
+from src.aggregator.doctor import cmd_doctor
 from src.storage.repository import FileRepository
 from src.storage.service import FileService
 from src.storage.setup import create_storage_client
@@ -35,68 +34,6 @@ async def cmd_auth_telegram() -> None:
     from src.aggregator.sources.telegram_auth import run_telegram_auth
 
     await run_telegram_auth()
-
-
-async def cmd_doctor() -> None:
-    print("=== Проверка конфигурации агрегатора (dry-run, доменные сущности не пишутся) ===")
-
-    async with async_session_maker() as session:
-        try:
-            await session.execute(text("SELECT 1"))
-            print("[OK] PostgreSQL: подключение работает")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] PostgreSQL: {exc}")
-
-    if aggregator_settings.is_telegram_configured:
-        try:
-            from telethon import TelegramClient
-
-            client = TelegramClient(
-                aggregator_settings.TELEGRAM_SESSION_PATH,
-                aggregator_settings.TELEGRAM_API_ID,
-                aggregator_settings.TELEGRAM_API_HASH,
-            )
-            await client.connect()
-            authorized = await client.is_user_authorized()
-            await client.disconnect()
-            if authorized:
-                print("[OK] Telegram: сессия авторизована")
-            else:
-                print("[WARN] Telegram: настроен, но сессия не авторизована (запустите auth-telegram)")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] Telegram: {exc}")
-    else:
-        print("[SKIP] Telegram: TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы")
-
-    if llm_settings.is_configured:
-        try:
-            async with _http_client() as http_client:
-                client = DeepSeekClient(llm_settings, http_client)
-                result, _ = await client.classify_post(
-                    "Ответь JSON: {\"decision\": \"keep\", \"reason\": \"ping\", "
-                    "\"is_advertisement\": false, \"needs_media_analysis\": false}",
-                    "ping",
-                )
-                print(f"[OK] DeepSeek: ответ получен, decision={result.decision.value}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] DeepSeek: {exc}")
-    else:
-        print("[SKIP] DeepSeek: DEEPSEEK_API_KEY не задан")
-
-    if settings.S3_BUCKET and settings.S3_ACCESS_KEY_ID and settings.S3_SECRET_ACCESS_KEY:
-        try:
-            async with create_storage_client() as client:
-                test_key = f"aggregator-doctor/{uuid4().hex}.txt"
-                await client.put(test_key, b"doctor check", content_type="text/plain")
-                try:
-                    exists = await client.get(test_key) == b"doctor check"
-                finally:
-                    await client.delete(test_key)
-            print(f"[OK] S3: тестовая запись/чтение/удаление успешны (exists={exists})")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[FAIL] S3: {exc}")
-    else:
-        print("[SKIP] S3: настройки не заданы (готовится отдельно)")
 
 
 _PIPELINE_STAGES = [
@@ -155,7 +92,7 @@ async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
 
     sources_config = load_sources_config()
     client = TelegramClient(
-        aggregator_settings.TELEGRAM_SESSION_PATH,
+        aggregator_settings.prepare_telegram_session(),
         aggregator_settings.TELEGRAM_API_ID,
         aggregator_settings.TELEGRAM_API_HASH,
     )
