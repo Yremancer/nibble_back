@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from src.aggregator.router import router as aggregator_router
 from src.auth.router import router as auth_router
 from src.city.router import router as city_router
 from src.depth.router import router as depth_router
@@ -10,6 +11,7 @@ from src.user.router import router as user_router
 from src.weather.router import router as weather_router
 
 api_controller = APIRouter()
+api_controller.include_router(aggregator_router)
 api_controller.include_router(auth_router)
 api_controller.include_router(city_router)
 api_controller.include_router(depth_router)

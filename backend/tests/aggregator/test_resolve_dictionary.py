@@ -10,7 +10,7 @@ from src.species.models import Species
 async def test_species_resolved_by_alias(session):
     session.add(
         Species(
-            name="Терпуг",
+            name="Тестовый терпуг",
             short_description="x",
             image_url="http://example.com/img.jpg",
             aliases=["терпужок", "terpug"],

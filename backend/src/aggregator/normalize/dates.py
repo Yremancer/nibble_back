@@ -24,6 +24,12 @@ def resolve_fishing_date(expression: str | None, published_at: datetime) -> date
     expr = expression.strip()
     published_local = published_at.astimezone(_TZ)
 
+    compound = re.fullmatch(r"(сегодня|вчера|позавчера)\s*,\s*([^,]+)", expr, re.IGNORECASE)
+    if compound:
+        relative = resolve_fishing_date(compound[1], published_at)
+        explicit = resolve_fishing_date(compound[2], published_at)
+        return relative if relative == explicit else None
+
     for pattern, offset_days in _RELATIVE_PATTERNS:
         if pattern.match(expr):
             return (published_local + timedelta(days=offset_days)).date()

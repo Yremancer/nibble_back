@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_SOURCES_PATH = Path(__file__).parent / "sources.json"
@@ -41,6 +41,7 @@ class AggregatorSettings(BaseSettings):
     AGG_BACKFILL_DEPTH_DAYS: int = 365
     AGG_RECHECK_WINDOW_HOURS: int = 72
     AGG_BATCH_SIZE: int = 50
+    AGG_SYNC_INTERVAL_S: float = Field(default=300, gt=0)
     AGG_RAW_RETENTION_DAYS: int = 180
 
     TELEGRAM_API_ID: int | None = None
@@ -50,7 +51,8 @@ class AggregatorSettings(BaseSettings):
 
     FARPOST_BASE_URL: str = "https://www.farpost.ru"
     FARPOST_CITY_PATH: str = "vladivostok/sport/fish/"
-    FARPOST_REQUEST_DELAY_S: float = 1.5
+    FARPOST_REQUEST_DELAY_S: float = Field(default=1.5, ge=0)
+    FARPOST_RECHECK_PAGES: int = Field(default=2, ge=1)
     FARPOST_MAX_CONCURRENCY: int = 2
 
     FISHING_VL_BASE_URL: str = "https://fishing-vl.ru"
@@ -58,6 +60,11 @@ class AggregatorSettings(BaseSettings):
     @property
     def is_telegram_configured(self) -> bool:
         return bool(self.TELEGRAM_API_ID and self.TELEGRAM_API_HASH)
+
+    def prepare_telegram_session(self) -> str:
+        path = Path(self.TELEGRAM_SESSION_PATH).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
 
 aggregator_settings = AggregatorSettings()

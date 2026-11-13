@@ -5,7 +5,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import httpx
+from telethon import TelegramClient
+from src.aggregator.exceptions import DownloadError
 from src.aggregator.safe_fetch import download_to_file
+from src.aggregator.sources.telegram_collector import TelegramCollector
+from src.aggregator.sources.telegram_public import PublicTelegramCollector
 from src.storage.exceptions import FileTooLargeError
 from src.storage.mime import EXTENSIONS
 from src.storage.models import File
@@ -22,9 +26,33 @@ def _read_limited(path: Path) -> bytes:
 
 
 class MediaService:
-    def __init__(self, files: FileService, http: httpx.AsyncClient):
+    def __init__(
+        self, files: FileService, http: httpx.AsyncClient,
+        telegram: TelegramClient | None = None,
+    ):
         self._files = files
         self._http = http
+        self._telegram = telegram
+
+    async def store_from_telegram(self, source_ref: str) -> File:
+        if source_ref.startswith("tgweb:"):
+            _, channel, message_id, index = source_ref.split(":")
+            collector = PublicTelegramCollector(self._http, channel)
+            url = await collector.media_url(int(message_id), int(index))
+            return await self.store_from_url(url)
+        if self._telegram is None:
+            raise DownloadError("Telegram client is not configured")
+        if not self._telegram.is_connected():
+            await self._telegram.connect()
+        if not await self._telegram.is_user_authorized():
+            raise DownloadError("Telegram session is not authorized")
+        channel = source_ref.split(":", 1)[0]
+        collector = TelegramCollector(self._telegram, channel)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "download"
+            if not await collector.download_media(source_ref, str(path)):
+                raise DownloadError("Telegram attachment is unavailable or changed")
+            return await self.store_from_local_file(path)
 
     async def store_from_url(self, url: str) -> File:
         filename = unquote(Path(urlsplit(url).path).name) or "media"
