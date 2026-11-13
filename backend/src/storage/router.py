@@ -2,6 +2,7 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Response, UploadFile, status
+from src.auth.deps import CurrentUserDep, ModeratorDep
 from src.storage.deps import FileServiceDep
 from src.storage.policy import CATEGORIES
 from src.storage.schemas import FileSchema
@@ -12,6 +13,7 @@ router = APIRouter(prefix="/files", tags=["Файлы"])
 @router.post("/{category}", status_code=status.HTTP_201_CREATED)
 async def upload_file(
     category: Literal["image", "video"],
+    _user: CurrentUserDep,
     service: FileServiceDep,
     file: Annotated[UploadFile, File()],
 ) -> FileSchema:
@@ -41,5 +43,5 @@ async def download_file(key: str, service: FileServiceDep) -> Response:
 
 
 @router.delete("/{key:path}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_file(key: str, service: FileServiceDep) -> None:
+async def delete_file(key: str, _user: ModeratorDep, service: FileServiceDep) -> None:
     await service.delete(key)
