@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 
 from src.aggregator.config import aggregator_settings, load_sources_config
 from src.aggregator import models as aggregator_models  # noqa: F401
-from src.database.all import *  # noqa: F403 - registers domain tables
+from src.database.all import *  # noqa: F403
 from src.database.base import Base
 from src.database.database import async_session_maker
 from src.llm.client import DeepSeekClient

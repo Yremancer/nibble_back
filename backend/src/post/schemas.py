@@ -9,7 +9,7 @@ from pydantic import (
     field_validator,
 )
 from src.models.media import MediaType
-from src.models.post import PostKind, SourceType
+from src.post.models import PostKind, SourceType
 
 PostText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=5000)
@@ -42,7 +42,6 @@ class CatchIn(BaseModel):
 
 
 class PostFields(BaseModel):
-    """Поля, общие для создания и правки отчёта."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,7 +72,6 @@ class PostCreate(PostFields):
 
 
 class PostUpdate(PostFields):
-    """Меняется только то, что передано; media и species заменяются целиком."""
 
     text: PostText | None = Field(None)
     media: MediaKeys | None = None
@@ -151,6 +149,7 @@ class PostOut(BaseModel):
     species: list[CatchOut]
     media: list[MediaOut]
     likes_count: int
+    liked_by_me: bool
     comments_count: int
     tg_reactions_count: int | None
     tg_comments_count: int | None
@@ -160,3 +159,24 @@ class PostOut(BaseModel):
 class PostPage(BaseModel):
     items: list[PostOut]
     next_cursor: str | None
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: PostText
+    parent_id: int | None = None
+
+
+class CommentOut(BaseModel):
+    id: int
+    post_id: int
+    parent_id: int | None
+    text: str
+    author: AuthorOut
+    created_at: datetime
+
+
+class CommentPage(BaseModel):
+    items: list[CommentOut]
+    next_cursor: int | None

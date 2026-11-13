@@ -14,7 +14,7 @@ from src.database.database import async_session_maker, engine
 from src.llm.client import DeepSeekClient
 from src.llm.settings import llm_settings
 from src.models.listing import Listing
-from src.models.post import Post
+from src.post.models import Post
 from src.aggregator.doctor import cmd_doctor
 from src.storage.repository import FileRepository
 from src.storage.service import FileService

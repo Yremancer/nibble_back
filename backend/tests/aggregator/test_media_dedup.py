@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 from src.models.media import PostMedia
-from src.models.post import Post, Source
+from src.post.models import Post, Source
 from src.aggregator.media import MediaService
 from src.storage.client import StorageClient
 from src.storage.models import File

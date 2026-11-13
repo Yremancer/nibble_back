@@ -36,7 +36,6 @@ class PublicTelegramCollector:
 
     async def resolve_channel_id(self) -> int:
         self._latest = await self._page()
-        # shortcut: ID берётся из data-view веб-превью, при изменении разметки потребуется обновить парсер.
         token = self._latest.css_first(".tgme_widget_message[data-view]")
         if token is None:
             raise DownloadError("Telegram web preview has no channel ID")
@@ -100,7 +99,6 @@ class PublicTelegramCollector:
                     "original_url": original_url, "forwarded_from_url": forwarded_url,
                 },
             ))
-            # URL живёт только до скачивания; в БД сохраняется стабильная ссылка на пост и номер вложения.
             self._media_urls[external_id] = media_urls
         return sorted(posts, key=lambda post: int(post.external_id))
 

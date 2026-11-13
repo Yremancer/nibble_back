@@ -14,7 +14,6 @@ merge:
 	git push
 	git checkout dev
 
-# dev
 
 start:
 	$(COMPOSE) up --build -d backend db
@@ -65,7 +64,6 @@ dump:
 	$(COMPOSE) exec -T db sh -c 'exec pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --file="/dumps/$$(date +%Y-%m-%d_%H-%M-%S).sql"'
 
 
-# AI skills: источник — .agents/skills, Claude Code читает .claude/skills (копия, в git не идёт)
 skills:
 	rm -rf .claude/skills
 	mkdir -p .claude

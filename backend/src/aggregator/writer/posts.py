@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.post import Post, PostKind, PostSpecies, PostStatus
+from src.post.models import Post, PostKind, PostSpecies, PostStatus
 
 
 class PostWriter:
