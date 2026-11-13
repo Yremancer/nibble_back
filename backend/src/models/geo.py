@@ -1,33 +1,21 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
-from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    CheckConstraint,
-    Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.database.base import Base, enum_check
-
-
-class WeatherCondition(StrEnum):
-    CLEAR = "clear"
-    PARTLY_CLOUDY = "partly_cloudy"
-    CLOUDY = "cloudy"
-    RAIN = "rain"
-    SNOW = "snow"
-    FOG = "fog"
+from src.database.base import Base
 
 
 class City(Base):
@@ -55,6 +43,9 @@ class Spot(Base):
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    aliases: Mapped[list[str] | None] = mapped_column(ARRAY(String(150)))
+    """Альтернативные названия для словарного сопоставления импортированных
+    упоминаний места (см. открытый вопрос в PDF, раздел 5)."""
 
     species: Mapped[list["SpotSpecies"]] = relationship(  # noqa: F821
         cascade="all, delete-orphan", passive_deletes=True
@@ -73,32 +64,5 @@ class DepthLayer(Base):
     tile_url_template: Mapped[str] = mapped_column(Text)
     attribution: Mapped[str] = mapped_column(String(255))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class WeatherForecast(Base):
-    __tablename__ = "weather_forecasts"
-    __table_args__ = (
-        CheckConstraint("(city_id IS NULL) <> (spot_id IS NULL)", name="one_target"),
-        enum_check("condition", WeatherCondition),
-        UniqueConstraint("city_id", "forecast_date"),
-        UniqueConstraint("spot_id", "forecast_date"),
-    )
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    city_id: Mapped[int | None] = mapped_column(
-        ForeignKey("cities.id", ondelete="CASCADE")
-    )
-    spot_id: Mapped[int | None] = mapped_column(
-        ForeignKey("spots.id", ondelete="CASCADE")
-    )
-    forecast_date: Mapped[date] = mapped_column(Date)
-    temp_c: Mapped[Decimal] = mapped_column(Numeric(4, 1))
-    condition: Mapped[str] = mapped_column(String(20))
-    wind_dir: Mapped[str | None] = mapped_column(String(3))
-    wind_speed_ms: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
-    provider: Mapped[str] = mapped_column(String(50))
-    fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

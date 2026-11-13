@@ -1,10 +1,24 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.api.api import api_controller
+from src.exc_handler import register_exception_handlers
 from src.settings import settings
+from src.storage.setup import setup_storage
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as http:
+        app.state.http = http
+        async with setup_storage(app):
+            yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,5 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
-app.state.http = httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0))
 app.include_router(api_controller)
+
+register_exception_handlers(app)

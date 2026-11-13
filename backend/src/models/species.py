@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.base import Base, enum_check
 
@@ -30,6 +31,9 @@ class Species(Base):
     typical_length_cm: Mapped[int | None] = mapped_column(SmallInteger)
     typical_weight_g: Mapped[int | None] = mapped_column(Integer)
     image_url: Mapped[str] = mapped_column(Text)
+    aliases: Mapped[list[str] | None] = mapped_column(ARRAY(String(100)))
+    """Альтернативные названия для словарного сопоставления импортированных
+    упоминаний вида (см. открытый вопрос в PDF, раздел 5)."""
 
     months: Mapped[list["SpeciesMonth"]] = relationship(
         cascade="all, delete-orphan",
