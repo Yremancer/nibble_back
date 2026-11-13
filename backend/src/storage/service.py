@@ -23,6 +23,7 @@ class FileService:
         *,
         filename: str,
         category: str,
+        key: str | None = None,
     ) -> File:
 
         cat = CATEGORIES[category]
@@ -30,7 +31,10 @@ class FileService:
         content_type = detect_content_type(data)
         check_allowed(data, content_type, cat)
 
-        key = build_key(cat, content_type)
+        key = key or build_key(cat, content_type)
+        existing = await self._repo.get_by_key(key)
+        if existing is not None:
+            return existing
 
         record = await self._repo.add(
             File(
@@ -65,4 +69,3 @@ class FileService:
 
         await self._repo.delete(record)
         await self._storage.delete(key)
-

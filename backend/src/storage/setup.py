@@ -8,7 +8,7 @@ from src.storage.client import StorageClient
 
 
 @asynccontextmanager
-async def setup_storage(app: FastAPI):
+async def create_storage_client():
     session = aioboto3.Session(
         aws_access_key_id=settings.S3_ACCESS_KEY_ID,
         aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
@@ -20,5 +20,11 @@ async def setup_storage(app: FastAPI):
         endpoint_url=settings.S3_ENDPOINT_URL or None,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     ) as s3:
-        app.state.storage = StorageClient(s3, settings.S3_BUCKET)
+        yield StorageClient(s3, settings.S3_BUCKET)
+
+
+@asynccontextmanager
+async def setup_storage(app: FastAPI):
+    async with create_storage_client() as client:
+        app.state.storage = client
         yield
