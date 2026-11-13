@@ -10,3 +10,6 @@ class CityRepository:
     async def list_all(self) -> list[City]:
         result = await self.session.scalars(select(City).order_by(City.name))
         return list(result)
+
+    async def get(self, city_id: int) -> City | None:
+        return await self.session.get(City, city_id)
