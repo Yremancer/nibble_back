@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     DB_NAME: str
     ALLOWED_ORIGINS: str
 
+    WEATHER_CACHE_TTL_MINUTES: int = 15
+
     @property
     def ORIGINS(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

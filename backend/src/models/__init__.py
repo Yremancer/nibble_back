@@ -1,4 +1,4 @@
-from src.models.geo import City, DepthLayer, Spot, WeatherCondition, WeatherForecast
+from src.models.geo import City, DepthLayer, Spot
 from src.models.post import (
     Comment,
     Post,
@@ -44,6 +44,4 @@ __all__ = [
     "TackleRecommendation",
     "User",
     "UserRole",
-    "WeatherCondition",
-    "WeatherForecast",
 ]
