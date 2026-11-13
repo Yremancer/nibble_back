@@ -20,6 +20,7 @@ start:
 	$(COMPOSE) up --build -d backend db
 	$(SLEEP)
 	$(COMPOSE) exec backend python -m alembic upgrade head
+	$(COMPOSE) up -d aggregator
 
 rebuild:
 	$(COMPOSE) down -v
@@ -53,6 +54,12 @@ auth-telegram:
 
 worker:
 	$(COMPOSE) exec -T backend python -m src.aggregator.cli worker
+
+schedule:
+	$(COMPOSE) up --build -d aggregator
+
+see-aggregator:
+	$(COMPOSE) logs -f aggregator
 
 dump:
 	$(COMPOSE) exec -T db sh -c 'exec pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --file="/dumps/$$(date +%Y-%m-%d_%H-%M-%S).sql"'

@@ -71,13 +71,11 @@ class ListingWriter:
             listing.description = description
             listing.price_rub = price_rub
             listing.price_raw = price_raw
-            if photo_url:
-                listing.photo_url = photo_url
+            listing.photo_url = photo_url
             listing.url = url
             listing.seller_name = seller_name
             listing.seller_url = seller_url
-            if characteristics:
-                listing.characteristics = characteristics
+            listing.characteristics = characteristics
             listing.last_seen_at = now
             if category_id is not None:
                 listing.category_id = category_id

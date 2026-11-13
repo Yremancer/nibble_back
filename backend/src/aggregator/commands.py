@@ -118,10 +118,10 @@ async def command_run(source_key: str, command: str):
             await connection.commit()
 
 
-async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool) -> dict:
+async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: bool, channel: str | None = None) -> dict:
     stats_all = {}
     if source in ("all", "telegram"):
-        stats_all["telegram"] = await _run_telegram_sync(mode="sync", since=None, limit=limit)
+        stats_all["telegram"] = await _run_telegram_sync(mode="sync", since=None, limit=limit, channel=channel)
     if source in ("all", "farpost"):
         stats_all["farpost"] = await _run_farpost_sync(max_pages=pages, max_listings=limit)
     if not dry_run:
@@ -130,9 +130,9 @@ async def cmd_sync(source: str, limit: int | None, pages: int | None, dry_run: b
     return stats_all
 
 
-async def cmd_backfill(source: str, since, limit: int | None, pages: int | None) -> dict:
+async def cmd_backfill(source: str, since, limit: int | None, pages: int | None, channel: str | None = None) -> dict:
     if source == "telegram":
-        stats = await _run_telegram_sync(mode="backfill", since=since, limit=limit)
+        stats = await _run_telegram_sync(mode="backfill", since=since, limit=limit, channel=channel)
     elif source == "farpost":
         stats = await _run_farpost_sync(max_pages=pages, max_listings=limit)
     elif source == "fishing_vl":
@@ -147,7 +147,7 @@ async def cmd_backfill(source: str, since, limit: int | None, pages: int | None)
     return stats
 
 
-async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
+async def _run_telegram_sync(mode: str, since, limit: int | None, channel: str | None = None) -> dict:
     if not aggregator_settings.is_telegram_configured:
         return {"error": "TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы"}
 
@@ -156,21 +156,21 @@ async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
     from src.aggregator.sources.telegram_sync import sync_telegram_source
 
     sources_config = load_sources_config()
+    sources = [source for source in sources_config.telegram if source.is_active and (channel is None or source.channel == channel)]
+    if channel is not None and not sources:
+        raise ValueError(f"активный канал {channel} не найден в sources.json")
     client = TelegramClient(
         aggregator_settings.prepare_telegram_session(),
         aggregator_settings.TELEGRAM_API_ID,
         aggregator_settings.TELEGRAM_API_HASH,
     )
-    await client.connect()
-    if not await client.is_user_authorized():
-        await client.disconnect()
-        return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
-
     all_stats = {}
     try:
-        for tg_source in sources_config.telegram:
-            if not tg_source.is_active:
-                continue
+        async with asyncio.timeout(30):
+            await client.connect()
+            if not await client.is_user_authorized():
+                return {"error": "Telegram-сессия не авторизована, выполните auth-telegram"}
+        for tg_source in sources:
             try:
                 async with async_session_maker() as session:
                     stats = await sync_telegram_source(
@@ -220,6 +220,17 @@ async def _run_fishing_vl_sync(limit: int | None) -> dict:
     return stats
 
 
+async def cmd_import_listings(input_path: str, city: str | None) -> dict:
+    from src.aggregator.sources.farpost_import import import_listings
+
+    async with async_session_maker() as session:
+        imported = await import_listings(session, Path(input_path), city=city)
+        await session.commit()
+    stats = {"import": imported, "pipeline": await _drain_pipeline()}
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+    return stats
+
+
 async def cmd_reprocess(stage: str, limit: int) -> dict:
     from src.aggregator.repository import TaskRepository
 
@@ -260,6 +271,50 @@ async def cmd_worker() -> None:
                 first_pass = False
         except Exception:
             logger.exception("pipeline worker pass failed")
+        await asyncio.sleep(5)
+
+
+async def _scheduled_pass(*, sync_due: bool) -> dict:
+    from src.settings import settings
+
+    async with command_run("telegram", "schedule" if sync_due else "worker") as stats:
+        missing = []
+        if not llm_settings.is_configured:
+            missing.append("DEEPSEEK_API_KEY")
+        if not (settings.S3_BUCKET and settings.S3_ACCESS_KEY_ID and settings.S3_SECRET_ACCESS_KEY):
+            missing.append("S3 credentials")
+        if sync_due and not aggregator_settings.is_telegram_configured:
+            missing.append("TELEGRAM_API_ID/TELEGRAM_API_HASH")
+        if missing:
+            stats["error"] = "не настроены: " + ", ".join(missing)
+            logger.error("schedule: %s", stats["error"])
+            return stats
+        if sync_due:
+            stats["telegram"] = await _run_telegram_sync(
+                mode="sync", since=None, limit=aggregator_settings.AGG_BATCH_SIZE,
+            )
+        stats["pipeline"] = await _drain_pipeline()
+        logger.info("schedule pass: %s", json.dumps(stats, ensure_ascii=False))
+        return stats
+
+
+async def cmd_schedule() -> None:
+    from time import monotonic
+    from src.aggregator.repository import TaskRepository
+
+    next_sync = 0.0
+    while True:
+        sync_due = monotonic() >= next_sync
+        try:
+            async with async_session_maker() as session:
+                ready = await TaskRepository(session).has_ready()
+            if sync_due or ready:
+                await _scheduled_pass(sync_due=sync_due)
+        except Exception:
+            logger.exception("scheduled pass failed")
+        finally:
+            if sync_due:
+                next_sync = monotonic() + aggregator_settings.AGG_SYNC_INTERVAL_S
         await asyncio.sleep(5)
 
 

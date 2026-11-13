@@ -7,7 +7,7 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_SOURCES_PATH = Path(__file__).parent / "sources.json"
@@ -52,6 +52,7 @@ class AggregatorSettings(BaseSettings):
     AGG_RECHECK_WINDOW_HOURS: int = 72
     """Окно повторной проверки недавних сообщений на редактирование."""
     AGG_BATCH_SIZE: int = 50
+    AGG_SYNC_INTERVAL_S: float = Field(default=300, gt=0)
     AGG_RAW_RETENTION_DAYS: int = 180
     """Срок хранения тяжёлых сырых ответов/временных файлов. Не затрагивает
     данные, нужные работающим публикациям."""
@@ -63,7 +64,8 @@ class AggregatorSettings(BaseSettings):
 
     FARPOST_BASE_URL: str = "https://www.farpost.ru"
     FARPOST_CITY_PATH: str = "vladivostok/sport/fish/"
-    FARPOST_REQUEST_DELAY_S: float = 1.5
+    FARPOST_REQUEST_DELAY_S: float = Field(default=1.5, ge=0)
+    FARPOST_RECHECK_PAGES: int = Field(default=2, ge=1)
     FARPOST_MAX_CONCURRENCY: int = 2
 
     FISHING_VL_BASE_URL: str = "https://fishing-vl.ru"

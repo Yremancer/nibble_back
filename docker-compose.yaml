@@ -14,6 +14,22 @@ services:
       db:
         condition: service_healthy
 
+  aggregator:
+    build: ./backend
+    command: ["python", "-u", "-m", "src.aggregator.cli", "schedule"]
+    restart: unless-stopped
+    networks:
+      - base
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
   db:
     image: postgres
     networks:

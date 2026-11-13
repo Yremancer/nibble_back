@@ -39,3 +39,9 @@ def test_explicit_date_without_year_near_publication():
     result = resolve_fishing_date("10 ноября", published_at)
 
     assert result.isoformat() == "2026-11-10"
+
+
+def test_compound_date_from_live_classification_requires_agreement():
+    published_at = datetime(2026, 11, 13, 2, 0, tzinfo=timezone.utc)
+    assert resolve_fishing_date("Вчера, 12 ноября", published_at).isoformat() == "2026-11-12"
+    assert resolve_fishing_date("Вчера, 11 ноября", published_at) is None

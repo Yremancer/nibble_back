@@ -12,12 +12,16 @@
 подтверждением снятия объявления (см. ТЗ, раздел 12).
 """
 
+import asyncio
 import logging
 import re
+from time import monotonic
+from urllib.parse import urljoin, urlsplit
 from dataclasses import dataclass, field
 
 import httpx
 from selectolax.parser import HTMLParser
+from src.aggregator.config import aggregator_settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,32 +53,62 @@ class ListingDetail:
     seller_url: str | None
     characteristics: dict = field(default_factory=dict)
     category_breadcrumb: str | None = None
+    city_name: str | None = None
 
 
 class FarpostHttpError(Exception):
-    def __init__(self, status_code: int, url: str):
-        super().__init__(f"HTTP {status_code} при запросе {url}")
+    def __init__(self, status_code: int, url: str, reason: str | None = None):
+        super().__init__(f"HTTP {status_code} при запросе {url}" + (f": {reason}" if reason else ""))
         self.status_code = status_code
         self.url = url
 
+    @property
+    def stops_run(self) -> bool:
+        return self.status_code in (0, 401, 403, 429, 503)
+
 
 class FarpostCollector:
-    def __init__(self, client: httpx.AsyncClient, base_url: str, city_path: str):
+    def __init__(self, client: httpx.AsyncClient, base_url: str, city_path: str, *, delay: float | None = None):
         self._client = client
         self._base_url = base_url.rstrip("/")
         self._city_path = city_path.strip("/")
+        self._delay = aggregator_settings.FARPOST_REQUEST_DELAY_S if delay is None else delay
+        self._next_request_at = 0.0
+        self._request_lock = asyncio.Lock()
+
+    async def _get(self, url: str, *, params: dict | None = None) -> httpx.Response:
+        async with self._request_lock:
+            for _ in range(6):
+                await asyncio.sleep(max(0, self._next_request_at - monotonic()))
+                try:
+                    response = await self._client.get(
+                        url, params=params, headers={"User-Agent": _USER_AGENT}, follow_redirects=False,
+                    )
+                except httpx.HTTPError as exc:
+                    raise FarpostHttpError(0, url, type(exc).__name__) from exc
+                finally:
+                    self._next_request_at = monotonic() + self._delay
+                if response.is_redirect:
+                    target = urljoin(url, response.headers.get("location", ""))
+                    if urlsplit(target).hostname != urlsplit(self._base_url).hostname:
+                        raise FarpostHttpError(403, url, "редирект за пределы источника")
+                    url, params = target, None
+                    continue
+                if response.status_code != 200:
+                    raise FarpostHttpError(response.status_code, url)
+                tree = HTMLParser(response.content.decode("windows-1251", errors="replace"))
+                title = tree.css_first("title")
+                if tree.css_first('form[action*="captcha"], input[name*="captcha"], #captcha') or (
+                    title and any(word in title.text().lower() for word in ("captcha", "доступ ограничен", "проверка браузера", "access denied"))
+                ):
+                    raise FarpostHttpError(403, url, "источник запросил проверку доступа")
+                return response
+        raise FarpostHttpError(403, url, "слишком много перенаправлений")
 
     async def fetch_list_page(self, page: int) -> list[ListingSummary]:
         url = f"{self._base_url}/{self._city_path}/"
         params = {"page": page} if page > 1 else {}
-        response = await self._client.get(
-            url,
-            params=params,
-            headers={"User-Agent": _USER_AGENT},
-            follow_redirects=True,
-        )
-        if response.status_code != 200:
-            raise FarpostHttpError(response.status_code, url)
+        response = await self._get(url, params=params)
 
         html = response.content.decode("windows-1251", errors="replace")
         tree = HTMLParser(html)
@@ -94,14 +128,12 @@ class FarpostCollector:
                     url=full_url,
                 )
             )
+        if not items and not any(marker in html.lower() for marker in ("ничего не найдено", "объявлений не найдено", "нет объявлений")):
+            raise FarpostHttpError(200, url, "не найдены карточки; проверьте разметку или используйте import-listings")
         return items
 
     async def fetch_detail(self, url: str, farpost_id: str) -> ListingDetail:
-        response = await self._client.get(
-            url, headers={"User-Agent": _USER_AGENT}, follow_redirects=True
-        )
-        if response.status_code != 200:
-            raise FarpostHttpError(response.status_code, url)
+        response = await self._get(url)
 
         html = response.content.decode("windows-1251", errors="replace")
         tree = HTMLParser(html)
@@ -153,19 +185,28 @@ class FarpostCollector:
                 if key and value:
                     characteristics[key] = value
 
+        if not title:
+            raise FarpostHttpError(200, url, "не найден заголовок объявления")
         breadcrumb = None
+        city_name = None
         breadcrumb_nodes = tree.css('script[type="application/ld+json"]')
         for node in breadcrumb_nodes:
-            if "BreadcrumbList" in (node.text() or ""):
-                import json
+            import json
 
-                try:
-                    data = json.loads(node.text())
-                    items = data.get("itemListElement", [])
-                    if items:
-                        breadcrumb = items[-1].get("name")
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    pass
+            try:
+                data = json.loads(node.text())
+            except (json.JSONDecodeError, TypeError):
+                continue
+            entries = data if isinstance(data, list) else [data]
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                items = entry.get("itemListElement", [])
+                if entry.get("@type") == "BreadcrumbList" and items:
+                    breadcrumb = items[-1].get("name")
+                address = entry.get("address") or (entry.get("location") or {}).get("address")
+                if isinstance(address, dict):
+                    city_name = address.get("addressLocality") or city_name
 
         return ListingDetail(
             farpost_id=farpost_id,
@@ -179,4 +220,5 @@ class FarpostCollector:
             seller_url=seller_url,
             characteristics=characteristics,
             category_breadcrumb=breadcrumb,
+            city_name=city_name,
         )

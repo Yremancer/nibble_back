@@ -8,3 +8,8 @@ class DownloadError(AppError):
 
 class UnsafeUrlError(DownloadError):
     detail = "Unsafe media URL"
+
+
+class FarpostUnavailableError(AppError):
+    status_code = 502
+    detail = "Не удалось получить объявления Farpost"

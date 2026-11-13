@@ -60,8 +60,7 @@ async def publish_pending_listings(session: AsyncSession, raw_item_ids: list[int
                     for a in attachments
                     if a.media_file_id is not None
                 ]
-                if media_items:
-                    await media_writer.set_media(listing.id, media_items)
+                await media_writer.set_media(listing.id, media_items)
 
                 done += 1
         except Exception:
