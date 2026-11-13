@@ -1,11 +1,3 @@
-"""DeepSeek клиент (OpenAI-совместимый Chat Completions API).
-
-Подход адаптирован из примера другого проекта: HTTP-клиент на httpx,
-настройки через конфиг, мягкая деградация при недоступности, логирование
-без утечки секретов. Контракт ответа валидируется Pydantic (см.
-src/llm/schemas.py) — самодекларируемая уверенность модели не считается
-гарантией корректности, это обязанность вызывающего кода.
-"""
 
 import asyncio
 import json
@@ -38,8 +30,6 @@ class DeepSeekClient:
     async def classify_post(
         self, system_prompt: str, post_text: str
     ) -> tuple[ClassificationResult, dict]:
-        """Возвращает валидированный результат и метаданные запроса
-        (токены/оценка стоимости) для записи в agg_classifications."""
         if not self.is_configured:
             raise LlmNotConfiguredError("DEEPSEEK_API_KEY не задан")
 

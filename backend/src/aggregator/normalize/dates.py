@@ -1,11 +1,3 @@
-"""Разрешение относительных дат рыбалки относительно времени публикации в
-часовом поясе Asia/Vladivostok (см. ТЗ, раздел 5: "вчера" трактуется
-относительно времени исходного поста, не момента обработки).
-
-Если выражение неоднозначно, возвращает None — поле остаётся пустым, а
-исходное выражение сохраняется в служебном слое (его хранит LLM-результат,
-не эта функция).
-"""
 
 import re
 from datetime import date, datetime, timedelta
@@ -58,9 +50,6 @@ def resolve_fishing_date(expression: str | None, published_at: datetime) -> date
                 candidate = date(year, month_num, int(day_str))
             except ValueError:
                 return None
-            # без явного года "22 декабря" после публикации в январе значит
-            # прошлый год (ловля через Новый год), но без года в тексте
-            # это неоднозначно, если разница больше полугода - не угадываем.
             if not year_str and abs((published_local.date() - candidate).days) > 200:
                 return None
             return candidate

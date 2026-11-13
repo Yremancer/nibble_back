@@ -1,6 +1,3 @@
-"""Реализация команд CLI. Каждая команда открывает собственную сессию БД и
-закрывает внешние клиенты по завершении, чтобы `doctor`/`sync` можно было
-запускать независимо друг от друга."""
 
 import json
 import logging
@@ -109,9 +106,6 @@ _PIPELINE_STAGES = [
 
 
 async def _drain_pipeline(limit_per_stage: int = 200) -> dict:
-    """Прогоняет очередь задач по всем этапам после ingest. Каждый этап
-    независим: сбой DeepSeek/S3 на одной публикации не останавливает
-    остальные и не теряет задачу (она останется pending/failed)."""
     stats = {}
     for stage in _PIPELINE_STAGES:
         stats[stage.value] = await _run_stage(stage, limit_per_stage)

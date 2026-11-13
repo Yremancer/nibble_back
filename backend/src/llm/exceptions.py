@@ -1,5 +1,5 @@
 class LlmError(Exception):
-    """Базовая ошибка клиента LLM."""
+    pass
 
 
 class LlmNotConfiguredError(LlmError):
@@ -7,8 +7,8 @@ class LlmNotConfiguredError(LlmError):
 
 
 class LlmRequestError(LlmError):
-    """Сетевая ошибка, таймаут или превышен лимит попыток."""
+    pass
 
 
 class LlmInvalidResponseError(LlmError):
-    """Ответ не прошёл валидацию Pydantic-схемой."""
+    pass

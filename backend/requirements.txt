@@ -1,6 +1,6 @@
 fastapi==0.116.1
 httpx==0.28.1
-pydantic==2.11.7
+pydantic[email]==2.11.7
 pydantic-settings
 SQLAlchemy[asyncio]==2.0.43
 uvicorn==0.35.0
@@ -9,6 +9,8 @@ asyncpg
 psycopg[binary]
 aioboto3
 python-multipart
+PyJWT
+pwdlib[argon2]
 
 telethon==1.36.*
 selectolax==0.3.*

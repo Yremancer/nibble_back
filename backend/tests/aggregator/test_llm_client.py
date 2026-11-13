@@ -1,7 +1,3 @@
-"""Сценарии 8 и 9: ошибка DeepSeek/невалидный JSON не приводят к потере
-данных (исключение, не silent-drop), а инструкции внутри поста не меняют
-контракт (валидация Pydantic отклоняет посторонние команды, не добавленные
-в схему)."""
 
 import httpx
 import pytest
@@ -71,8 +67,6 @@ async def test_invalid_json_raises_not_silently_dropped():
 @pytest.mark.asyncio
 @respx.mock
 async def test_schema_rejects_unexpected_fields_from_prompt_injection():
-    """Пост пытается навязать decision='execute_tool' - вне enum, схема его
-    отклоняет (не принимает произвольное поведение)."""
     respx.post("https://api.deepseek.test/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,

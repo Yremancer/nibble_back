@@ -1,7 +1,3 @@
-"""Этап классификации: берёт текущую версию содержимого, проверяет кеш
-(agg_classifications по content_version_id+model+prompt_version), иначе
-зовёт DeepSeek. Сбой/таймаут/невалидный JSON не удаляют публикацию —
-задача остаётся для повтора (retry-failed --stage classify)."""
 
 import logging
 
@@ -90,7 +86,7 @@ async def process_classify_tasks(
         except LlmError as exc:
             await tasks_repo.mark_failed(task, str(exc))
             failed += 1
-        except Exception as exc:  # noqa: BLE001 - не терять задачу при любой ошибке
+        except Exception as exc:  # noqa: BLE001
             logger.exception("classify stage failed for raw_item %s", task.raw_item_id)
             await tasks_repo.mark_failed(task, str(exc))
             failed += 1

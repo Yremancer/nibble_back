@@ -1,13 +1,3 @@
-"""Запись классифицированной публикации в доменную модель posts.
-
-Владение полями: источник обновляет text/published_at/media/kind при
-изменении оригинала; поля, зафиксированные модератором вручную
-(managed_fields), не перезаписываются повторным импортом (см. ТЗ,
-раздел 13). Новости/происшествия не должны становиться "последним отчётом"
-места — это обеспечивается тем, что только kind=fishing_report с
-подтверждённым spot_id учитывается соответствующим запросом на стороне бэка
-(вне этой задачи), здесь это задаётся только корректным kind/spot_id.
-"""
 
 from datetime import date, datetime
 
@@ -86,9 +76,6 @@ class PostWriter:
     async def set_catches(
         self, post_id: int, catches: list[dict]
     ) -> None:
-        """catches: [{"species_id": int, "quantity": int|None, "max_weight_g": int|None}]
-        Полная замена набора по посту — классификация детерминирована по
-        текущей версии содержимого."""
         existing = await self._session.get(Post, post_id)
         if existing is None:
             return
