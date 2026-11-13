@@ -26,7 +26,6 @@ class TackleCategory(Base):
 
 
 class TackleLink(Base):
-
     __tablename__ = "tackle_links"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

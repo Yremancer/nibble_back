@@ -1,8 +1,3 @@
-"""Add file metadata.
-
-Revision ID: f2a9c7d1b408
-Revises: 86d51179ce59
-"""
 
 import sqlalchemy as sa
 from alembic import op

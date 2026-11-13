@@ -36,6 +36,15 @@ class SpeciesRepository:
             Species, species_id, options=[selectinload(Species.months)]
         )
 
+    async def existing_ids(self, species_ids: list[int]) -> set[int]:
+        result = await self.session.scalars(
+            select(Species.id).where(Species.id.in_(species_ids))
+        )
+        return set(result)
+
+    async def method_exists(self, method_id: int) -> bool:
+        return await self.session.get(FishingMethod, method_id) is not None
+
     async def list_methods(self) -> list[FishingMethod]:
         result = await self.session.scalars(
             select(FishingMethod).order_by(FishingMethod.name)

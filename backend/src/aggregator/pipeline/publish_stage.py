@@ -15,7 +15,7 @@ from src.aggregator.writer.media import PostMediaWriter
 from src.aggregator.writer.posts import PostWriter
 from src.llm.schemas import ClassificationResult
 from src.llm.settings import llm_settings
-from src.models.post import PostKind, PostStatus
+from src.post.models import PostKind, PostStatus
 
 logger = logging.getLogger(__name__)
 

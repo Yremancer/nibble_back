@@ -6,7 +6,7 @@ from src.aggregator.config import NormalizationRule, load_sources_config
 from src.aggregator.models import AggRawItem, ProcessingStage
 from src.aggregator.normalize.text import normalize_post_text
 from src.aggregator.repository import RawItemRepository, TaskRepository
-from src.models.post import Source
+from src.post.models import Source
 
 logger = logging.getLogger(__name__)
 

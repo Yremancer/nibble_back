@@ -167,7 +167,6 @@ class TaskRepository:
         return result.scalar_one()
 
     async def enqueue_missing_media(self) -> None:
-        # Old queues could reach dedup before a media task had ever been created.
         query = select(
             AggProcessingTask.raw_item_id,
             literal(ProcessingStage.MEDIA.value), literal(TaskStatus.PENDING.value),
@@ -219,7 +218,6 @@ class TaskRepository:
             .with_for_update(skip_locked=True)
         )
         tasks = list(result.scalars())
-        # Claims stay locked until results commit; a crash rolls back both.
         for task in tasks:
             task.status = TaskStatus.IN_PROGRESS.value
         await self._session.flush()
