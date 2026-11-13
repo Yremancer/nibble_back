@@ -15,17 +15,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from src.city.models import City
 from src.database.base import Base
 
-
-class City(Base):
-    __tablename__ = "cities"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True)
-    lat: Mapped[Decimal] = mapped_column(Numeric(9, 6))
-    lon: Mapped[Decimal] = mapped_column(Numeric(9, 6))
-    timezone: Mapped[str] = mapped_column(String(50))
+__all__ = ["City", "DepthLayer", "Spot"]
 
 
 class Spot(Base):
