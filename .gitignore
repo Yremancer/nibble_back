@@ -226,3 +226,5 @@ CLAUDE.local.md
 # macOS
 .DS_Store
 .claude/skills/
+
+dumps/
