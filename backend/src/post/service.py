@@ -10,6 +10,7 @@ from src.models.post import Post, PostKind, PostSpecies, PostStatus
 from src.post.exceptions import (
     InvalidCursorError,
     InvalidPostError,
+    KlevSourceMissingError,
     PostForbiddenError,
     PostNotFoundError,
 )
@@ -107,7 +108,9 @@ class PostService:
             data.spot_id, data.method_id, [c.species_id for c in data.species]
         )
         files = await self._load_files(data.media)
-        source = await self.repo.get_klev_source() or await self.repo.add_klev_source()
+        source = await self.repo.get_klev_source()
+        if source is None:
+            raise KlevSourceMissingError
         post = Post(
             source_id=source.id,
             author_id=user.id,

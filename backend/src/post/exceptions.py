@@ -14,6 +14,11 @@ class InvalidPostError(AppError):
     detail = "Invalid post data"
 
 
+class KlevSourceMissingError(AppError):
+    status_code = 503
+    detail = "Source 'klev' is not configured"
+
+
 class InvalidCursorError(AppError):
     status_code = 422
     detail = "Invalid cursor"

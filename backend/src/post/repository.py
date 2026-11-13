@@ -9,8 +9,6 @@ from src.post.schemas import FeedQuery
 from src.spot.models import Spot
 from src.user.models import User
 
-KLEV_SOURCE_NAME = "Клёв"
-
 
 class PostRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -97,12 +95,6 @@ class PostRepository:
         return await self.session.scalar(
             select(Source).where(Source.type == SourceType.KLEV.value).limit(1)
         )
-
-    async def add_klev_source(self) -> Source:
-        source = Source(type=SourceType.KLEV.value, name=KLEV_SOURCE_NAME)
-        self.session.add(source)
-        await self.session.flush()
-        return source
 
     async def attached_file_ids(
         self, file_ids: list[int], *, except_post_id: int | None = None
