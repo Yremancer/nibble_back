@@ -6,6 +6,8 @@ from sqlalchemy import (
     SmallInteger,
     String,
     UniqueConstraint,
+)
+from sqlalchemy import (
     text as sql_text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,8 +21,6 @@ class MediaType(StrEnum):
 
 
 class PostMedia(Base):
-    """Фото и видео публикации в едином порядке."""
-
     __tablename__ = "post_media"
     __table_args__ = (
         enum_check("type", MediaType),

@@ -1,10 +1,9 @@
-"""Сценарии 12 и 13: неизвестное место не получает выдуманные координаты
-(остаётся кандидатом), вид рыбы сопоставляется со справочником по алиасам."""
 
 import pytest
 from src.aggregator.resolve.dictionary import DictionaryResolver
-from src.models.geo import City, Spot
-from src.models.species import Species
+from src.city.models import City
+from src.spot.models import Spot
+from src.species.models import Species
 
 
 @pytest.mark.asyncio

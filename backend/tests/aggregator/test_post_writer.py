@@ -1,7 +1,3 @@
-"""Сценарии 11 и 20: новости/происшествия не становятся отчётом об улове
-(fishing_date не заполняется, kind соответствует категории), повторный
-импорт сохраняет ручную модерацию (managed_fields) и не перезаписывает
-зафиксированные человеком поля."""
 
 from datetime import date, datetime, timezone
 
@@ -56,7 +52,6 @@ async def test_reimport_preserves_manually_moderated_fields(session):
         bait=None, conditions=None, tg_reactions_count=None, tg_comments_count=None,
     )
 
-    # модератор вручную скрывает публикацию и фиксирует владение полем status
     post.status = PostStatus.HIDDEN.value
     post.managed_fields = {"status": True}
     await session.flush()

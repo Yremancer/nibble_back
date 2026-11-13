@@ -1,13 +1,3 @@
-"""Разовый сбор спотов с fishing-vl.ru.
-
-Список мест по месяцам (/places/<month>/) ссылается на карточки /place/<slug>/.
-Карточка содержит имя, описание (с подъездом), фото и рыбу по месяцам, но
-координаты встроены только как короткая ссылка Yandex-карт
-(https://yandex.ru/map-widget/v1/-/<code>), которая резолвится 301-редиректом
-в URL с параметром ll=<lon>,<lat>. Это подтверждено живым запросом (см.
-отчёт). Если резолв не даёт координат, место сохраняется как кандидат без
-lat/lon — в spots координаты обязательны, фиктивные не создаются (см. ТЗ,
-раздел 5/9)."""
 
 import logging
 import re
@@ -113,9 +103,6 @@ class FishingVlCollector:
 
 
 def _extract_fish_in_place(html: str) -> dict[str, list[str]]:
-    """Парсит window.fishInPlaceData — JS-массив [Месяц, вид1, вид2, ...].
-    Массив использует одинарные кавычки (не JSON), поэтому разбирается как
-    литерал Python через ast.literal_eval, а не json.loads."""
     match = re.search(r"window\.fishInPlaceData\s*=\s*(\[[\s\S]*?\]);", html)
     if not match:
         return {}

@@ -1,7 +1,3 @@
-"""Запись объявлений Фарпоста. farpost_id — стабильный внешний ключ:
-точное совпадение всегда обновление, а не новая карточка (см. ТЗ, раздел
-11). Отсутствие в обходе/403 не меняют is_active напрямую — это делает
-отдельная команда на основе достоверного состояния (state)."""
 
 from datetime import datetime, timezone
 
@@ -100,18 +96,12 @@ class ListingWriter:
         return listing, existing is None
 
     def _apply_state(self, listing: Listing, new_state: ListingState) -> None:
-        """Отсутствие в обходе или 403 передаются как UNKNOWN и не должны
-        снимать активное объявление молча; только достоверные REMOVED/EXPIRED
-        переключают is_active."""
         if new_state == ListingState.UNKNOWN:
             return
         listing.state = new_state.value
         listing.is_active = new_state == ListingState.ACTIVE
 
     async def mark_not_seen(self, listing: Listing) -> None:
-        """Карточка не встретилась в текущем обходе: состояние переводится в
-        unknown, is_active не трогаем до подтверждения через повторную
-        проверку конкретной карточки."""
         if listing.state == ListingState.ACTIVE.value:
             listing.state = ListingState.UNKNOWN.value
             await self._session.flush()

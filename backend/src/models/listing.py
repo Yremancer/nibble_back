@@ -14,6 +14,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+)
+from sqlalchemy import (
     text as sql_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -22,8 +24,6 @@ from src.database.base import Base, enum_check
 
 
 class ListingState(StrEnum):
-    """Достоверное состояние карточки, отдельно от listings.is_active:
-    403/отсутствие в обходе не означает снятие объявления."""
 
     ACTIVE = "active"
     REMOVED = "removed"
@@ -37,9 +37,6 @@ class ListingMediaType(StrEnum):
 
 
 class Listing(Base):
-    """Объявление Фарпоста (per-ad). Расширение модели из PDF: в коде
-    проекта до этой задачи существовал только tackle_links (ссылка на
-    отфильтрованную выдачу), а не карточка конкретного товара."""
 
     __tablename__ = "listings"
     __table_args__ = (
@@ -64,10 +61,7 @@ class Listing(Base):
     description: Mapped[str | None] = mapped_column(Text)
     price_rub: Mapped[int | None] = mapped_column(Integer)
     price_raw: Mapped[str | None] = mapped_column(String(100))
-    """Исходное представление цены: 'договорная', дробные значения и т.п.,
-    когда price_rub (int) не может хранить его молча округлённым."""
     photo_url: Mapped[str | None] = mapped_column(Text)
-    """Главное фото для совместимости с полем listings.photo_url из PDF."""
     url: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("true"))
     state: Mapped[str] = mapped_column(
@@ -77,7 +71,6 @@ class Listing(Base):
     seller_url: Mapped[str | None] = mapped_column(Text)
     characteristics: Mapped[dict | None] = mapped_column(JSONB)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    """Когда карточка последний раз подтверждена доступной в обходе."""
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

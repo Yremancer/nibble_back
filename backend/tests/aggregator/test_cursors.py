@@ -1,5 +1,3 @@
-"""Сценарий 19: остановка посередине обхода не теряет прогресс — курсор
-хранится отдельно для incremental/backfill и переживает рестарт."""
 
 import pytest
 from src.aggregator.repository import CursorRepository
@@ -29,6 +27,5 @@ async def test_cursor_resumes_from_checkpoint_after_restart(session):
 
     await repo.set("farpost", "incremental", {"next_page": 7})
 
-    # имитация рестарта процесса: та же логическая позиция читается заново
     resumed = await repo.get("farpost", "incremental")
     assert resumed["next_page"] == 7, "обход должен продолжиться со страницы 7, а не начаться заново"

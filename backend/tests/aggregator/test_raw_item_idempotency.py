@@ -1,5 +1,3 @@
-"""Сценарии 1 и 2 из ТЗ: повторный импорт не создаёт дубли, изменённый
-пост обновляет ту же сущность."""
 
 import pytest
 from src.aggregator.repository import RawItemRepository

@@ -1,5 +1,3 @@
-"""Проверка защиты от SSRF при скачивании вложений: запрет на локальные/
-служебные адреса и обрыв при превышении лимита размера."""
 
 import tempfile
 from pathlib import Path
@@ -12,9 +10,6 @@ from src.aggregator.exceptions import UnsafeUrlError
 from src.aggregator.safe_fetch import download_to_file
 from src.storage.exceptions import FileTooLargeError
 
-# cdn.example.com не резолвится в тестовом окружении без сети; подменяем
-# разрешение DNS, чтобы проверять логику скачивания отдельно от SSRF-фильтра
-# (его отдельно проверяют test_*_is_rejected с реальными приватными IP).
 _FAKE_PUBLIC_ADDRINFO = [(2, 1, 6, "", ("93.184.216.34", 0))]
 
 
