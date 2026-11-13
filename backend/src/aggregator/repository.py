@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.aggregator.models import (
@@ -69,6 +69,11 @@ class RawItemRepository:
 
         existing.last_seen_at = now
         content_changed = existing.content_hash != content_hash
+        if kind == "telegram_post":
+            content_changed = content_changed or any(
+                existing.raw_payload.get(key) != raw_payload.get(key)
+                for key in ("text", "media_refs")
+            )
         if content_changed:
             existing.raw_payload = raw_payload
             existing.content_hash = content_hash
@@ -160,14 +165,17 @@ class TaskRepository:
         return result.scalar_one()
 
     async def claim_pending(
-        self, stage: ProcessingStage, limit: int
+        self, stage: ProcessingStage, limit: int, *, retry_failed: bool = False
     ) -> list[AggProcessingTask]:
         now = datetime.now(timezone.utc)
         result = await self._session.execute(
             select(AggProcessingTask)
             .where(
                 AggProcessingTask.stage == stage.value,
-                AggProcessingTask.status == TaskStatus.PENDING.value,
+                AggProcessingTask.status.in_(
+                    [TaskStatus.PENDING.value, TaskStatus.FAILED.value]
+                    if retry_failed else [TaskStatus.PENDING.value]
+                ),
                 AggProcessingTask.available_at <= now,
             )
             .order_by(AggProcessingTask.available_at.asc())
@@ -321,20 +329,29 @@ class MediaAttachmentRepository:
     async def upsert(
         self, raw_item_id: int, attachment_index: int, source_ref: str, media_type: str
     ) -> AggMediaAttachment:
+        insert = pg_insert(AggMediaAttachment).values(
+            raw_item_id=raw_item_id,
+            attachment_index=attachment_index,
+            source_ref=source_ref,
+            media_type=media_type,
+        )
         stmt = (
-            pg_insert(AggMediaAttachment)
-            .values(
-                raw_item_id=raw_item_id,
-                attachment_index=attachment_index,
-                source_ref=source_ref,
-                media_type=media_type,
-            )
-            .on_conflict_do_nothing(
-                index_elements=["raw_item_id", "attachment_index"]
+            insert.on_conflict_do_update(
+                index_elements=["raw_item_id", "attachment_index"],
+                set_={
+                    "source_ref": source_ref,
+                    "media_type": media_type,
+                    "download_state": "pending",
+                    "media_file_id": None,
+                    "attempts": 0,
+                    "last_error": None,
+                },
+                where=(AggMediaAttachment.source_ref != source_ref)
+                | (AggMediaAttachment.media_type != media_type),
             )
             .returning(AggMediaAttachment)
         )
-        result = await self._session.execute(stmt)
+        result = await self._session.execute(stmt.execution_options(populate_existing=True))
         row = result.scalar_one_or_none()
         await self._session.flush()
         if row is not None:
@@ -346,6 +363,14 @@ class MediaAttachmentRepository:
             )
         )
         return existing.scalar_one()
+
+    async def delete_after(self, raw_item_id: int, count: int) -> None:
+        await self._session.execute(
+            delete(AggMediaAttachment).where(
+                AggMediaAttachment.raw_item_id == raw_item_id,
+                AggMediaAttachment.attachment_index >= count,
+            )
+        )
 
     async def pending_for_item(self, raw_item_id: int) -> list[AggMediaAttachment]:
         result = await self._session.execute(
@@ -367,6 +392,7 @@ class MediaAttachmentRepository:
     async def mark_uploaded(self, attachment: AggMediaAttachment, media_file_id: int) -> None:
         attachment.download_state = "uploaded"
         attachment.media_file_id = media_file_id
+        attachment.last_error = None
         await self._session.flush()
 
     async def mark_failed(self, attachment: AggMediaAttachment, error: str) -> None:

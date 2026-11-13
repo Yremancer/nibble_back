@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CollectedPost:
     external_id: str
-    """ID последнего (или единственного) сообщения альбома/поста — стабилен
+    """ID первого (или единственного) сообщения альбома/поста — стабилен
     для одной публикации, т.к. альбом всегда группируется целиком."""
     all_message_ids: list[int]
     text: str
@@ -33,7 +33,7 @@ class CollectedPost:
     original_url: str
     media_refs: list[tuple[str, str]]
     """[(source_ref, media_type)]. source_ref — стабильная строка вида
-    'channel_id:message_id:media_index', позволяющая повторно скачать
+    'channel:message_id:media_id', позволяющая повторно скачать
     вложение через Telethon, даже если прямой URL не хранится."""
     reactions_count: int | None
     comments_count: int | None
@@ -74,21 +74,29 @@ class TelegramCollector:
 
             if message.grouped_id is not None:
                 if pending_group_id is not None and message.grouped_id != pending_group_id:
-                    yield await self._build_collected_post(pending_group)
+                    yield await self._collect_post(pending_group)
                     pending_group = []
                 pending_group_id = message.grouped_id
                 pending_group.append(message)
                 continue
 
             if pending_group:
-                yield await self._build_collected_post(pending_group)
+                yield await self._collect_post(pending_group)
                 pending_group = []
                 pending_group_id = None
 
-            yield await self._build_collected_post([message])
+            yield await self._collect_post([message])
 
         if pending_group:
-            yield await self._build_collected_post(pending_group)
+            yield await self._collect_post(pending_group)
+
+    async def _collect_post(self, messages: list[Message]) -> CollectedPost | None:
+        try:
+            return await self._build_collected_post(messages)
+        except Exception:
+            # None позволяет продолжить обход, но запрещает sync перескакивать курсором через ошибку.
+            logger.exception("telegram post collection failed for %s", [m.id for m in messages])
+            return None
 
     async def _build_collected_post(self, messages: list[Message]) -> CollectedPost:
         messages_sorted = sorted(messages, key=lambda m: m.id)
@@ -99,7 +107,8 @@ class TelegramCollector:
         for msg in messages_sorted:
             media_type = self._media_type(msg)
             if media_type:
-                media_refs.append((f"{self._channel}:{msg.id}", media_type))
+                media = msg.media.photo if media_type == "photo" else msg.media.document
+                media_refs.append((f"{self._channel}:{msg.id}:{media.id}", media_type))
 
         channel_entity = await self._client.get_entity(self._channel)
         username = getattr(channel_entity, "username", None)
@@ -148,14 +157,18 @@ class TelegramCollector:
         return None
 
     async def download_media(self, source_ref: str, dest_path: str) -> bool:
-        channel, message_id = source_ref.split(":", 1)
-        message = await self._client.get_messages(channel, ids=int(message_id))
-        if message is None or message.media is None:
-            return False
+        channel, message_id, *media_id = source_ref.split(":")
+        entity = int(channel) if channel.lstrip("-").isdigit() else channel
         for attempt in range(3):
             try:
-                await self._client.download_media(message, file=dest_path)
-                return True
+                message = await self._client.get_messages(entity, ids=int(message_id))
+                media_type = self._media_type(message) if message is not None else None
+                if media_type is None:
+                    return False
+                media = message.media.photo if media_type == "photo" else message.media.document
+                if media_id and str(media.id) != media_id[0]:
+                    return False
+                return bool(await self._client.download_media(message, file=dest_path))
             except FloodWaitError as exc:
                 logger.warning("FloodWait %s сек при скачивании %s", exc.seconds, source_ref)
                 await asyncio.sleep(exc.seconds)

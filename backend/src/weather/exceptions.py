@@ -1,12 +1,11 @@
 from src.exceptions import AppError, EntityNotFoundError
+from src.spot.exceptions import SpotNotFoundError
+
+__all__ = ["CityNotFoundError", "SpotNotFoundError", "WeatherUnavailableError"]
 
 
 class CityNotFoundError(EntityNotFoundError):
     entity = "City"
-
-
-class SpotNotFoundError(EntityNotFoundError):
-    entity = "Spot"
 
 
 class WeatherUnavailableError(AppError):

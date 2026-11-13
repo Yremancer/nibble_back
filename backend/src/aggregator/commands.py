@@ -103,16 +103,20 @@ async def _run_telegram_sync(mode: str, since, limit: int | None) -> dict:
 
     all_stats = {}
     try:
-        async with async_session_maker() as session:
-            for tg_source in sources_config.telegram:
-                if not tg_source.is_active:
-                    continue
-                stats = await sync_telegram_source(
-                    session, client, tg_source, sources_config,
-                    mode=mode, since=since, limit=limit,
-                )
+        for tg_source in sources_config.telegram:
+            if not tg_source.is_active:
+                continue
+            try:
+                async with async_session_maker() as session:
+                    stats = await sync_telegram_source(
+                        session, client, tg_source, sources_config,
+                        mode=mode, since=since, limit=limit,
+                    )
+                    await session.commit()
                 all_stats[tg_source.channel] = stats
-            await session.commit()
+            except Exception:
+                logger.exception("telegram sync failed for %s", tg_source.channel)
+                all_stats[tg_source.channel] = {"errors": 1}
     finally:
         await client.disconnect()
 
@@ -188,8 +192,21 @@ async def _run_stage(stage: ProcessingStage, limit: int) -> dict:
 
             async with _http_client() as http_client, create_storage_client() as storage_client:
                 files = FileService(FileRepository(session), storage_client)
-                media_service = MediaService(files, http_client)
-                stats = await process_media_tasks(session, media_service, limit)
+                telegram = None
+                if aggregator_settings.is_telegram_configured:
+                    from telethon import TelegramClient
+
+                    telegram = TelegramClient(
+                        aggregator_settings.prepare_telegram_session(),
+                        aggregator_settings.TELEGRAM_API_ID,
+                        aggregator_settings.TELEGRAM_API_HASH,
+                    )
+                try:
+                    media_service = MediaService(files, http_client, telegram)
+                    stats = await process_media_tasks(session, media_service, limit)
+                finally:
+                    if telegram is not None:
+                        await telegram.disconnect()
         elif stage == ProcessingStage.PUBLISH:
             from src.aggregator.pipeline.publish_stage import process_publish_tasks
 

@@ -8,7 +8,7 @@ shortcut: один процесс на файл сессии, без файло�
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ from src.aggregator.config import (
 )
 from src.aggregator.pipeline.ingest import ingest_telegram_post
 from src.aggregator.repository import CursorRepository
-from src.aggregator.sources.telegram_collector import TelegramCollector
+from src.aggregator.sources.telegram_collector import CollectedPost, TelegramCollector
 from src.models.post import Source, SourceType
 
 logger = logging.getLogger(__name__)
@@ -78,45 +78,77 @@ async def sync_telegram_source(
     cursor = await cursor_repo.get(source_key, cursor_type)
     min_id = cursor.get("last_message_id", 0) if cursor else 0
 
-    reverse = mode == "backfill"
-    max_processed_id = min_id
+    cursor_blocked = False
     count = 0
 
-    async for collected in collector.iter_history(min_id=min_id, reverse=reverse):
-        if since is not None and collected.published_at < since and mode == "backfill":
-            continue
-        if limit is not None and count >= limit:
-            break
-        count += 1
+    async def save(collected: CollectedPost, *, advance_cursor: bool) -> bool:
         stats["fetched"] += 1
-
         try:
-            raw_item_id, changed, is_new = await ingest_telegram_post(
-                session,
-                source_key=source_key,
-                external_id=collected.external_id,
-                raw_payload={
-                    **collected.raw_payload,
-                    "source_id": source.id,
-                    "external_post_id": collected.external_id,
-                },
-                raw_text=collected.text,
-                media_refs=collected.media_refs,
-                boilerplate_rules=boilerplate_rules,
-                parser_version=PARSER_VERSION,
-            )
+            async with session.begin_nested():
+                _, changed, is_new = await ingest_telegram_post(
+                    session,
+                    source_key=source_key,
+                    external_id=collected.external_id,
+                    raw_payload={
+                        **collected.raw_payload,
+                        "source_id": source.id,
+                        "external_post_id": collected.external_id,
+                    },
+                    raw_text=collected.text,
+                    media_refs=collected.media_refs,
+                    boilerplate_rules=boilerplate_rules,
+                    parser_version=PARSER_VERSION,
+                )
+                if advance_cursor:
+                    await cursor_repo.set(
+                        source_key, cursor_type,
+                        {"last_message_id": max(collected.all_message_ids)},
+                    )
             if changed:
                 stats["created" if is_new else "updated"] += 1
-
-            max_processed_id = max(max_processed_id, max(collected.all_message_ids))
+            return True
         except Exception:
             logger.exception("ingest failed for telegram post %s", collected.external_id)
             stats["errors"] += 1
+            return False
 
-    if max_processed_id > min_id:
-        await cursor_repo.set(
-            source_key, cursor_type, {"last_message_id": max_processed_id}
+    try:
+        async for collected in collector.iter_history(min_id=min_id, reverse=True):
+            if (
+                collected is not None and since is not None
+                and collected.published_at < since and mode == "backfill"
+            ):
+                continue
+            if limit is not None and count >= limit:
+                break
+            count += 1
+            if collected is None:
+                stats["errors"] += 1
+                cursor_blocked = True
+                continue
+            if not await save(collected, advance_cursor=not cursor_blocked):
+                # Следующий запуск должен вернуться к пропуску, даже если записи после него сохранены.
+                cursor_blocked = True
+    except Exception:
+        logger.exception("telegram history failed for %s", cfg.channel)
+        stats["errors"] += 1
+
+    if mode == "sync" and min_id:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=aggregator_settings.AGG_RECHECK_WINDOW_HOURS
         )
+        try:
+            # Перепроверка не расходует лимит новых записей, иначе малый лимит остановит сбор.
+            async for collected in collector.iter_history(max_id=min_id + 1):
+                if collected is None:
+                    stats["errors"] += 1
+                    continue
+                if collected.published_at < cutoff:
+                    break
+                await save(collected, advance_cursor=False)
+        except Exception:
+            logger.exception("telegram recheck failed for %s", cfg.channel)
+            stats["errors"] += 1
 
     source.last_synced_at = datetime.now(timezone.utc)
     await session.flush()

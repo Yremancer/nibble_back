@@ -146,8 +146,7 @@ async def process_publish_tasks(session: AsyncSession, limit: int) -> dict:
                 for a in attachments
                 if a.media_file_id is not None
             ]
-            if media_items:
-                await media_writer.set_media(post.id, media_items)
+            await media_writer.set_media(post.id, media_items)
 
             await tasks_repo.mark_done(task)
             done += 1

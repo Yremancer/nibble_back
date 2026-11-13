@@ -24,11 +24,13 @@ def _make_message(msg_id: int, grouped_id: int | None, media_type: str | None, t
         from telethon.tl.types import MessageMediaPhoto
 
         msg.media = MagicMock(spec=MessageMediaPhoto)
+        msg.media.photo = MagicMock(id=msg_id * 100)
     elif media_type == "video":
         from telethon.tl.types import MessageMediaDocument
 
         document = MagicMock()
         document.mime_type = "video/mp4"
+        document.id = msg_id * 100
         media = MagicMock(spec=MessageMediaDocument)
         media.document = document
         msg.media = media
@@ -103,3 +105,18 @@ async def test_post_without_caption_is_not_lost():
     assert len(posts) == 1
     assert posts[0].text == ""
     assert len(posts[0].media_refs) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_ref, expected", [
+    ("-100123:20", True),
+    ("-100123:20:2000", True),
+    ("-100123:20:9999", False),
+])
+async def test_download_supports_legacy_refs_and_rejects_replaced_media(source_ref, expected):
+    client = MagicMock()
+    client.get_messages = AsyncMock(return_value=_make_message(20, None, "photo"))
+    client.download_media = AsyncMock(return_value="download.jpg")
+    assert await TelegramCollector(client, "-100123").download_media(source_ref, "download.jpg") is expected
+    client.get_messages.assert_awaited_once_with(-100123, ids=20)
+    assert client.download_media.await_count == int(expected)
