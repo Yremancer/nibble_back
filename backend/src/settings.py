@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     DB_NAME: str
     ALLOWED_ORIGINS: str
 
+    WEATHER_CACHE_TTL_MINUTES: int = 15
+
     S3_ENDPOINT_URL: str
     S3_ACCESS_KEY_ID: str
     S3_SECRET_ACCESS_KEY: str
