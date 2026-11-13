@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
@@ -41,7 +42,15 @@ class Listing(Base):
     отфильтрованную выдачу), а не карточка конкретного товара."""
 
     __tablename__ = "listings"
-    __table_args__ = (enum_check("state", ListingState),)
+    __table_args__ = (
+        enum_check("state", ListingState),
+        Index(
+            "ix_listings_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     farpost_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
