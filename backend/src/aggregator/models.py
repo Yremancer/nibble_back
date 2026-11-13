@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -137,7 +138,15 @@ class AggContentVersion(Base):
     нормализации. Исходный текст никогда не перезаписывается."""
 
     __tablename__ = "agg_content_versions"
-    __table_args__ = (UniqueConstraint("raw_item_id", "version_no"),)
+    __table_args__ = (
+        UniqueConstraint("raw_item_id", "version_no"),
+        Index(
+            "ix_agg_content_versions_normalized_text_trgm",
+            "normalized_text",
+            postgresql_using="gin",
+            postgresql_ops={"normalized_text": "gin_trgm_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     raw_item_id: Mapped[int] = mapped_column(

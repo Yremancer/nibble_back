@@ -1,12 +1,12 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from src.weather.models import WeatherCondition
 
 
 class WeatherQuery(BaseModel):
-    city_id: int | None = Field(default=None, gt=0)
-    spot_id: int | None = Field(default=None, gt=0)
+    city_id: int | None = None
+    spot_id: int | None = None
 
     @model_validator(mode="after")
     def check_one_target(self) -> "WeatherQuery":
