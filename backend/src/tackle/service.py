@@ -4,7 +4,6 @@ from src.tackle.schemas import CategoryOut, TackleLinkOut, TackleQuery
 
 
 def with_utm(url: str, params: str) -> str:
-    """Добавляет метку к исходящей ссылке, не трогая остальные параметры."""
     if not params or "utm_source=" in url:
         return url
     base, hash_sep, fragment = url.partition("#")

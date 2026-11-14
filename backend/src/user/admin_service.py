@@ -49,7 +49,6 @@ class AdminUserService:
 
     async def set_role(self, user_id: int, role: UserRole, actor: User) -> AdminUserOut:
         if user_id == actor.id:
-            # Иначе единственный админ мог бы случайно лишить себя прав.
             raise ForbiddenError("You cannot change your own role")
         user = await self._require(user_id)
         user = await self.repo.update(user, {"role": role.value})

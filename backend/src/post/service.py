@@ -250,7 +250,7 @@ class PostService:
             fishing_date = data.fishing_date if "fishing_date" in sent else post.fishing_date
             fishing_time = data.fishing_time if "fishing_time" in sent else post.fishing_time
             if "fishing_date" in sent and fishing_date is None and "fishing_time" not in sent:
-                fishing_time = None  # время без даты не бывает: сбрасываем вместе с датой
+                fishing_time = None
             if fishing_time is not None and fishing_date is None:
                 raise InvalidPostError("fishing_time requires fishing_date")
             await self._check_fishing_moment(fishing_date, fishing_time, user)
@@ -327,7 +327,6 @@ class PostService:
         if missing:
             raise InvalidPostError(f"Files not found: {missing}")
         files = [by_key[k] for k in keys]
-        # Чужой файл прикрепить нельзя, даже если знаешь его key.
         if any(f.uploaded_by != user.id for f in files):
             raise InvalidPostError("You can attach only files you uploaded")
         busy = await self.repo.attached_file_ids(

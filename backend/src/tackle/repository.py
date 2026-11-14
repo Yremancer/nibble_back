@@ -4,11 +4,6 @@ from src.models.tackle import TackleCategory, TackleLink, TackleRecommendation
 
 
 def applies(rec: TackleRecommendation, species_id: int | None, method_id: int | None) -> bool:
-    """Подходит ли рекомендация под выбранные рыбу и способ.
-
-    Пустая цель рекомендации значит "любой": "камбала + с берега" находит и подборки
-    только для камбалы, и только для берега, и подборки именно под эту пару.
-    """
     if species_id is not None and method_id is not None:
         return rec.species_id in (species_id, None) and rec.method_id in (method_id, None)
     if species_id is not None:

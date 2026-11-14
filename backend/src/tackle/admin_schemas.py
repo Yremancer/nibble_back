@@ -56,7 +56,6 @@ class CategoryAdminOut(BaseModel):
 
 
 class RecommendationIn(BaseModel):
-    """Для какой рыбы и/или способа ловли ссылка подходит; пустое значение значит "любой"."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,7 +124,6 @@ class LinkCreate(LinkFields):
 
 
 class LinkUpdate(LinkFields):
-    """Меняется только то, что передано; recommendations заменяются целиком."""
 
     category_id: int | None = None
     city_id: int | None = None

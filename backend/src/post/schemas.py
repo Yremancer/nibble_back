@@ -65,7 +65,6 @@ class PostFields(BaseModel):
     @field_validator("fishing_time", mode="before")
     @classmethod
     def _time_as_text(cls, value):
-        # Иначе число принялось бы за секунды от полуночи.
         if value is not None and not isinstance(value, str | time):
             raise ValueError("must be a time string like 06:30")
         return value
