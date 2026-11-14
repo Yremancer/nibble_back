@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"
+    AUTH_REFRESH_COOKIE_PATH: str = "/auth"
     AUTH_REFRESH_COOKIE_SECURE: bool = True
     AUTH_PASSWORD_MIN_LENGTH: int = 8
 
