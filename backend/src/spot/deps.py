@@ -7,18 +7,19 @@ from src.species.repository import SpeciesRepository
 from src.spot.admin_service import SpotAdminService
 from src.spot.repository import SpotRepository
 from src.spot.service import SpotService
+from src.storage.deps import ImageServiceDep
 
 
-def get_spot_service(session: SessionDep) -> SpotService:
-    return SpotService(SpotRepository(session))
+def get_spot_service(session: SessionDep, images: ImageServiceDep) -> SpotService:
+    return SpotService(SpotRepository(session), images)
 
 
 SpotServiceDep = Annotated[SpotService, Depends(get_spot_service)]
 
 
-def get_spot_admin_service(session: SessionDep) -> SpotAdminService:
+def get_spot_admin_service(session: SessionDep, images: ImageServiceDep) -> SpotAdminService:
     return SpotAdminService(
-        SpotRepository(session), CityRepository(session), SpeciesRepository(session)
+        SpotRepository(session), CityRepository(session), SpeciesRepository(session), images
     )
 
 

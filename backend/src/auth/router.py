@@ -7,6 +7,7 @@ from src.auth.deps import (
     check_auth_origin,
 )
 from src.auth.schemas import LoginRequest, RegisterRequest, TokenResponse
+from src.storage.deps import ImageServiceDep
 from src.user.schemas import UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -15,8 +16,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post(
     "/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse
 )
-async def register(data: RegisterRequest, service: AuthServiceDep):
-    return await service.register(data)
+async def register(data: RegisterRequest, service: AuthServiceDep, images: ImageServiceDep):
+    user = await service.register(data)
+    return await images.apply_one(UserResponse.model_validate(user), "avatar_url")
 
 
 @router.post(
@@ -52,5 +54,5 @@ async def logout(
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(user: CurrentUserDep):
-    return user
+async def me(user: CurrentUserDep, images: ImageServiceDep):
+    return await images.apply_one(UserResponse.model_validate(user), "avatar_url")

@@ -88,8 +88,9 @@ class PostModerationService(PostService):
         if not await self.repo.post_exists(post_id):
             raise PostNotFoundError(id=post_id)
         rows = await self.repo.comments(post_id, cursor, limit)
+        avatars = await self.images.links(a.avatar_url for _, a in rows[:limit])
         return AdminCommentPage(
-            items=[self._admin_comment(c, a) for c, a in rows[:limit]],
+            items=[self._admin_comment(c, a, avatars) for c, a in rows[:limit]],
             next_cursor=rows[limit - 1][0].id if len(rows) > limit else None,
         )
 
@@ -100,7 +101,8 @@ class PostModerationService(PostService):
         comment.is_hidden = hidden
         await self.repo.flush()
         author = await self.repo.get_user(comment.author_id)
-        return self._admin_comment(comment, author)
+        avatars = await self.images.links([author.avatar_url])
+        return self._admin_comment(comment, author, avatars)
 
     async def _admin_card(
         self,
@@ -117,14 +119,18 @@ class PostModerationService(PostService):
         )
 
     @staticmethod
-    def _admin_comment(comment: Comment, author: User) -> AdminCommentOut:
+    def _admin_comment(
+        comment: Comment, author: User, avatars: dict[str, str]
+    ) -> AdminCommentOut:
         return AdminCommentOut(
             id=comment.id,
             post_id=comment.post_id,
             parent_id=comment.parent_id,
             text=comment.text,
             author=AuthorOut(
-                id=author.id, display_name=author.display_name, avatar_url=author.avatar_url
+                id=author.id,
+                display_name=author.display_name,
+                avatar_url=avatars.get(author.avatar_url, author.avatar_url),
             ),
             created_at=comment.created_at,
             is_hidden=comment.is_hidden,

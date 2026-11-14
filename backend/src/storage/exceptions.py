@@ -28,3 +28,8 @@ class UnsupportedFileTypeError(AppError):
 class FileTooLargeError(AppError):
     status_code = 413
     detail = "File is too large"
+
+
+class InvalidImageError(AppError):
+    status_code = 422
+    detail = "Invalid image"

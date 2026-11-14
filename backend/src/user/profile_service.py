@@ -1,4 +1,5 @@
 from src.post.repository import PostRepository
+from src.storage.images import ImageService
 from src.user.exceptions import CannotFollowSelfError, UserNotFoundError
 from src.user.models import User
 from src.user.repository import UserRepository
@@ -7,18 +8,22 @@ from src.utils import cursor as cursors
 
 
 class ProfileService:
-    def __init__(self, users: UserRepository, posts: PostRepository) -> None:
+    def __init__(
+        self, users: UserRepository, posts: PostRepository, images: ImageService
+    ) -> None:
         self.users = users
         self.posts = posts
+        self.images = images
 
     async def get_profile(self, user_id: int, viewer: User | None) -> ProfileOut:
         user = await self._require_user(user_id)
         city = await self.users.get_city(user.city_id)
         followers, following = await self.users.follow_counts(user.id)
+        avatars = await self.images.links([user.avatar_url])
         return ProfileOut(
             id=user.id,
             display_name=user.display_name,
-            avatar_url=user.avatar_url,
+            avatar_url=avatars.get(user.avatar_url, user.avatar_url),
             bio=user.bio,
             city=CityRef(id=city.id, name=city.name),
             created_at=user.created_at,
@@ -64,12 +69,13 @@ class ProfileService:
             else set()
         )
         last_user, last_at = page[-1] if page else (None, None)
+        avatars = await self.images.links(user.avatar_url for user, _ in page)
         return UserPage(
             items=[
                 UserBrief(
                     id=user.id,
                     display_name=user.display_name,
-                    avatar_url=user.avatar_url,
+                    avatar_url=avatars.get(user.avatar_url, user.avatar_url),
                     is_following=user.id in followed,
                 )
                 for user, _ in page

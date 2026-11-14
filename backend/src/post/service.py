@@ -47,6 +47,7 @@ from src.species.repository import SpeciesRepository
 from src.spot.repository import SpotRepository
 from src.storage.client import StorageClient
 from src.storage.exceptions import StorageUnavailableError
+from src.storage.images import ImageService
 from src.storage.models import File
 from src.storage.repository import FileRepository
 from src.user.models import User, UserRole
@@ -86,6 +87,7 @@ class PostService:
         self.files = files
         self.cities = cities
         self.storage = storage
+        self.images = ImageService(files, storage)
 
     async def get_feed(self, query: FeedQuery, viewer: User | None = None) -> PostPage:
         if query.following and viewer is None:
@@ -96,6 +98,7 @@ class PostService:
         viewer_id = viewer.id if viewer else None
         engagement = await self.repo.engagement([post.id for post in page], viewer_id)
         followed = await self._followed_authors(viewer_id, page)
+        avatars = await self.images.links(p.author.avatar_url for p in page if p.author)
         return PostPage(
             items=await asyncio.gather(
                 *(
@@ -104,6 +107,7 @@ class PostService:
                         viewer,
                         engagement.get(p.id, PostEngagement(0, 0, False)),
                         followed,
+                        avatars=avatars,
                     )
                     for p in page
                 )
@@ -145,8 +149,9 @@ class PostService:
         if await self.repo.get_for_interaction(post_id) is None:
             raise PostNotFoundError(id=post_id)
         rows = await self.repo.comments(post_id, cursor, limit)
+        avatars = await self.images.links(author.avatar_url for _, author in rows[:limit])
         return CommentPage(
-            items=[self._comment(comment, author) for comment, author in rows[:limit]],
+            items=[self._comment(comment, author, avatars) for comment, author in rows[:limit]],
             next_cursor=rows[limit - 1][0].id if len(rows) > limit else None,
         )
 
@@ -161,7 +166,7 @@ class PostService:
             post_id=post_id, author_id=user.id, parent_id=data.parent_id, text=data.text
         )
         await self.repo.add_comment(comment)
-        return self._comment(comment, user)
+        return self._comment(comment, user, await self.images.links([user.avatar_url]))
 
     async def delete_comment(self, post_id: int, comment_id: int, user: User) -> None:
         await self._interaction_post(post_id)
@@ -181,7 +186,7 @@ class PostService:
         return post
 
     @staticmethod
-    def _comment(comment: Comment, author: User) -> CommentOut:
+    def _comment(comment: Comment, author: User, avatars: dict[str, str]) -> CommentOut:
         if comment.is_hidden:
             return CommentOut(
                 id=comment.id,
@@ -198,7 +203,9 @@ class PostService:
             parent_id=comment.parent_id,
             text=comment.text,
             author=AuthorOut(
-                id=author.id, display_name=author.display_name, avatar_url=author.avatar_url
+                id=author.id,
+                display_name=author.display_name,
+                avatar_url=avatars.get(author.avatar_url, author.avatar_url),
             ),
             created_at=comment.created_at,
             is_hidden=False,
@@ -326,8 +333,8 @@ class PostService:
         busy = await self.repo.attached_file_ids(
             [f.id for f in files], except_post_id=except_post_id
         )
-        if busy:
-            raise InvalidPostError("Files are already attached to another post")
+        if busy or await self.files.used_as_image([f.key for f in files]):
+            raise InvalidPostError("Files are already in use")
         return files
 
     @staticmethod
@@ -380,12 +387,15 @@ class PostService:
         engagement: PostEngagement | None = None,
         followed: set[int] | None = None,
         reveal: bool = False,
+        avatars: dict[str, str] | None = None,
     ) -> PostOut:
         if engagement is None:
             stats = await self.repo.engagement([post.id], viewer.id if viewer else None)
             engagement = stats.get(post.id, PostEngagement(0, 0, False))
         if followed is None:
             followed = await self._followed_authors(viewer.id if viewer else None, [post])
+        if avatars is None:
+            avatars = await self.images.links([post.author.avatar_url] if post.author else [])
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
@@ -409,7 +419,7 @@ class PostService:
             author=PostAuthorOut(
                 id=post.author.id,
                 display_name=post.author.display_name,
-                avatar_url=post.author.avatar_url,
+                avatar_url=avatars.get(post.author.avatar_url, post.author.avatar_url),
                 is_following=post.author.id in followed,
             )
             if post.author
