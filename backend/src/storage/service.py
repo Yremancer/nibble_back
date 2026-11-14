@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from src.storage.client import StorageClient
-from src.storage.exceptions import FileNotFoundInStorageError
+from src.storage.exceptions import FileForbiddenError, FileNotFoundInStorageError
 from src.storage.models import File
 from src.storage.policy import CATEGORIES
 from src.storage.repository import FileRepository
@@ -10,6 +10,9 @@ from src.storage.utils import (
     check_allowed,
     detect_content_type,
 )
+from src.user.models import User, UserRole
+
+STAFF_ROLES = (UserRole.MODERATOR, UserRole.ADMIN)
 
 
 class FileService:
@@ -24,6 +27,7 @@ class FileService:
         filename: str,
         category: str,
         key: str | None = None,
+        uploaded_by: int | None = None,
     ) -> File:
 
         cat = CATEGORIES[category]
@@ -42,6 +46,7 @@ class FileService:
                 original_name=filename,
                 content_type=content_type,
                 size=len(data),
+                uploaded_by=uploaded_by,
             )
         )
 
@@ -62,10 +67,13 @@ class FileService:
 
         return await self._storage.presigned_url(key, expires=expires)
 
-    async def delete(self, key: str) -> None:
+    async def delete(self, key: str, actor: User) -> None:
         record = await self._repo.get_by_key(key)
         if record is None:
             raise FileNotFoundInStorageError
+        # Пустой владелец (файлы парсера) не значит "любой": такие файлы удаляет только персонал.
+        if record.uploaded_by != actor.id and actor.role not in STAFF_ROLES:
+            raise FileForbiddenError
 
         await self._repo.delete(record)
         await self._storage.delete(key)
