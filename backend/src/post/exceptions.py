@@ -19,11 +19,6 @@ class KlevSourceMissingError(AppError):
     detail = "Source 'klev' is not configured"
 
 
-class InvalidCursorError(AppError):
-    status_code = 422
-    detail = "Invalid cursor"
-
-
 class ImportedPostLikeError(ForbiddenError):
     detail = "Imported posts cannot be liked"
 

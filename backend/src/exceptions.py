@@ -29,3 +29,8 @@ class ConflictError(AppError):
 class ForbiddenError(AppError):
     status_code = 403
     detail = "Forbidden"
+
+
+class InvalidCursorError(AppError):
+    status_code = 422
+    detail = "Invalid cursor"
