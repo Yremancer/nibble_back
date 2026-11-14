@@ -175,6 +175,16 @@ class PostService:
 
     @staticmethod
     def _comment(comment: Comment, author: User) -> CommentOut:
+        if comment.is_hidden:
+            return CommentOut(
+                id=comment.id,
+                post_id=comment.post_id,
+                parent_id=comment.parent_id,
+                text=None,
+                author=None,
+                created_at=comment.created_at,
+                is_hidden=True,
+            )
         return CommentOut(
             id=comment.id,
             post_id=comment.post_id,
@@ -184,6 +194,7 @@ class PostService:
                 id=author.id, display_name=author.display_name, avatar_url=author.avatar_url
             ),
             created_at=comment.created_at,
+            is_hidden=False,
         )
 
     async def create(self, data: PostCreate, user: User) -> PostOut:
@@ -340,6 +351,7 @@ class PostService:
         viewer: User | None = None,
         engagement: PostEngagement | None = None,
         followed: set[int] | None = None,
+        reveal: bool = False,
     ) -> PostOut:
         if engagement is None:
             stats = await self.repo.engagement([post.id], viewer.id if viewer else None)
@@ -349,7 +361,8 @@ class PostService:
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
-        own = viewer is not None and post.author_id == viewer.id
+        # reveal: модератору место и дата нужны целиком, чтобы проверять посты.
+        own = reveal or (viewer is not None and post.author_id == viewer.id)
         return PostOut(
             id=post.id,
             kind=post.kind,

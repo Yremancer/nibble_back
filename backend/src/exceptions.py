@@ -34,3 +34,8 @@ class ForbiddenError(AppError):
 class InvalidCursorError(AppError):
     status_code = 422
     detail = "Invalid cursor"
+
+
+class ReferenceNotFoundError(AppError):
+    status_code = 422
+    detail = "Referenced object does not exist"

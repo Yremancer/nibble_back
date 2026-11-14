@@ -1,6 +1,7 @@
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from src.post.models import Post, PostSpecies
 from src.species.models import FishingMethod, Species, SpeciesMonth
 
 
@@ -50,3 +51,59 @@ class SpeciesRepository:
             select(FishingMethod).order_by(FishingMethod.name)
         )
         return list(result)
+
+    async def existing_method_ids(self, method_ids: list[int]) -> set[int]:
+        result = await self.session.scalars(
+            select(FishingMethod.id).where(FishingMethod.id.in_(method_ids))
+        )
+        return set(result)
+
+    async def name_taken(self, name: str, *, except_id: int | None = None) -> bool:
+        stmt = select(Species.id).where(func.lower(Species.name) == name.lower())
+        if except_id is not None:
+            stmt = stmt.where(Species.id != except_id)
+        return await self.session.scalar(stmt.limit(1)) is not None
+
+    async def add(self, species: Species) -> None:
+        self.session.add(species)
+        await self.session.flush()
+
+    async def flush(self) -> None:
+        await self.session.flush()
+
+    async def delete(self, species: Species) -> None:
+        await self.session.delete(species)
+        await self.session.flush()
+
+    async def count_posts_with_species(self, species_id: int) -> int:
+        return await self.session.scalar(
+            select(func.count())
+            .select_from(PostSpecies)
+            .where(PostSpecies.species_id == species_id)
+        )
+
+    async def get_method(self, method_id: int) -> FishingMethod | None:
+        return await self.session.get(FishingMethod, method_id)
+
+    async def method_name_taken(
+        self, name: str, *, except_id: int | None = None
+    ) -> bool:
+        stmt = select(FishingMethod.id).where(
+            func.lower(FishingMethod.name) == name.lower()
+        )
+        if except_id is not None:
+            stmt = stmt.where(FishingMethod.id != except_id)
+        return await self.session.scalar(stmt.limit(1)) is not None
+
+    async def add_method(self, method: FishingMethod) -> None:
+        self.session.add(method)
+        await self.session.flush()
+
+    async def delete_method(self, method: FishingMethod) -> None:
+        await self.session.delete(method)
+        await self.session.flush()
+
+    async def count_posts_with_method(self, method_id: int) -> int:
+        return await self.session.scalar(
+            select(func.count()).select_from(Post).where(Post.method_id == method_id)
+        )
