@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from src.database.deps import SessionDep
 from src.storage.client import StorageClient
+from src.storage.images import ImageService
 from src.storage.repository import FileRepository
 from src.storage.service import FileService
 
@@ -26,3 +27,10 @@ def get_file_service(repo: FileRepositoryDep, storage: StorageClientDep) -> File
 
 
 FileServiceDep = Annotated[FileService, Depends(get_file_service)]
+
+
+def get_image_service(repo: FileRepositoryDep, storage: StorageClientDep) -> ImageService:
+    return ImageService(repo, storage)
+
+
+ImageServiceDep = Annotated[ImageService, Depends(get_image_service)]

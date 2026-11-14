@@ -29,9 +29,9 @@ async def get_spot(spot_id: int, _staff: ModeratorDep, service: SpotAdminService
 
 @router.patch("/{spot_id}", response_model=SpotAdminOut)
 async def update_spot(
-    spot_id: int, data: SpotUpdate, _staff: ModeratorDep, service: SpotAdminServiceDep
+    spot_id: int, data: SpotUpdate, staff: ModeratorDep, service: SpotAdminServiceDep
 ):
-    return await service.update(spot_id, data)
+    return await service.update(spot_id, data, staff)
 
 
 @router.delete("/{spot_id}", status_code=status.HTTP_204_NO_CONTENT)

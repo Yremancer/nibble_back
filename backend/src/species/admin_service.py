@@ -16,6 +16,8 @@ from src.species.exceptions import (
 from src.species.models import FishingMethod, Species, SpeciesMonth
 from src.species.repository import SpeciesRepository
 from src.species.schemas import FishingMethodOut
+from src.storage.images import ImageService
+from src.user.models import User
 
 SCALAR_FIELDS = (
     "name",
@@ -25,25 +27,28 @@ SCALAR_FIELDS = (
     "identification",
     "typical_length_cm",
     "typical_weight_g",
-    "image_url",
     "aliases",
 )
 
 
 class SpeciesAdminService:
-    def __init__(self, repo: SpeciesRepository) -> None:
+    def __init__(self, repo: SpeciesRepository, images: ImageService) -> None:
         self.repo = repo
+        self.images = images
 
     async def list_species(self, q: str | None) -> list[SpeciesAdminOut]:
         species = await self.repo.search(q.strip() if q else None, None)
-        return [SpeciesAdminOut.model_validate(s) for s in species]
+        return await self.images.apply(
+            [SpeciesAdminOut.model_validate(s) for s in species], "image_url"
+        )
 
     async def get_species(self, species_id: int) -> SpeciesAdminOut:
-        return SpeciesAdminOut.model_validate(await self._require(species_id))
+        return await self._out(await self._require(species_id))
 
-    async def create(self, data: SpeciesCreate) -> SpeciesAdminOut:
+    async def create(self, data: SpeciesCreate, staff: User) -> SpeciesAdminOut:
         if await self.repo.name_taken(data.name):
             raise SpeciesAlreadyExistsError
+        image = await self.images.claim(data.image_key, staff)
         species = Species(
             name=data.name,
             latin_name=data.latin_name,
@@ -52,20 +57,27 @@ class SpeciesAdminService:
             identification=data.identification,
             typical_length_cm=data.typical_length_cm,
             typical_weight_g=data.typical_weight_g,
-            image_url=data.image_url,
+            image_url=image,
             aliases=data.aliases,
             months=[SpeciesMonth(month=m) for m in sorted(data.months)],
         )
         await self.repo.add(species)
-        return SpeciesAdminOut.model_validate(species)
+        return await self._out(species)
 
-    async def update(self, species_id: int, data: SpeciesUpdate) -> SpeciesAdminOut:
+    async def update(
+        self, species_id: int, data: SpeciesUpdate, staff: User
+    ) -> SpeciesAdminOut:
         species = await self._require(species_id)
         sent = data.model_fields_set
         if "name" in sent and await self.repo.name_taken(
             data.name, except_id=species.id
         ):
             raise SpeciesAlreadyExistsError
+        old_image = species.image_url
+        if "image_key" in sent:
+            species.image_url = await self.images.claim(
+                data.image_key, staff, current=old_image
+            )
         for field in SCALAR_FIELDS:
             if field in sent:
                 setattr(species, field, getattr(data, field))
@@ -76,14 +88,18 @@ class SpeciesAdminService:
                 for month in sorted(data.months)
             ]
         await self.repo.flush()
-        return SpeciesAdminOut.model_validate(species)
+        if species.image_url != old_image:
+            await self.images.release(old_image)
+        return await self._out(species)
 
     async def delete(self, species_id: int) -> None:
         species = await self._require(species_id)
         used = await self.repo.count_posts_with_species(species.id)
         if used:
             raise SpeciesInUseError(f"Species is used in {used} posts")
+        image = species.image_url
         await self.repo.delete(species)
+        await self.images.release(image)
 
     async def create_method(self, data: MethodCreate) -> FishingMethodOut:
         if await self.repo.method_name_taken(data.name):
@@ -106,6 +122,9 @@ class SpeciesAdminService:
         if used:
             raise MethodInUseError(f"Fishing method is used in {used} posts")
         await self.repo.delete_method(method)
+
+    async def _out(self, species: Species) -> SpeciesAdminOut:
+        return await self.images.apply_one(SpeciesAdminOut.model_validate(species), "image_url")
 
     async def _require(self, species_id: int) -> Species:
         species = await self.repo.get(species_id)

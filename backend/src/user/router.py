@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from src.auth.deps import AdminDep, CurrentUserDep, OptionalUserDep
+from src.storage.deps import ImageServiceDep
 from src.user.deps import ProfileServiceDep, UserServiceDep
 from src.user.schemas import (
     FollowListQuery,
@@ -15,20 +16,29 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("", response_model=list[UserResponse])
-async def list_users(_admin: AdminDep, service: UserServiceDep):
-    return await service.list_users()
+async def list_users(_admin: AdminDep, service: UserServiceDep, images: ImageServiceDep):
+    users = await service.list_users()
+    return await images.apply([UserResponse.model_validate(u) for u in users], "avatar_url")
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int, actor: CurrentUserDep, service: UserServiceDep):
-    return await service.get_user(user_id, actor)
+async def get_user(
+    user_id: int, actor: CurrentUserDep, service: UserServiceDep, images: ImageServiceDep
+):
+    user = await service.get_user(user_id, actor)
+    return await images.apply_one(UserResponse.model_validate(user), "avatar_url")
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
 async def update_user(
-    user_id: int, data: UserUpdate, actor: CurrentUserDep, service: UserServiceDep
+    user_id: int,
+    data: UserUpdate,
+    actor: CurrentUserDep,
+    service: UserServiceDep,
+    images: ImageServiceDep,
 ):
-    return await service.update(user_id, data, actor)
+    user = await service.update(user_id, data, actor)
+    return await images.apply_one(UserResponse.model_validate(user), "avatar_url")
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

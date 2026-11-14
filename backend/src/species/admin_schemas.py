@@ -39,7 +39,8 @@ class SpeciesFields(BaseModel):
 class SpeciesCreate(SpeciesFields):
     name: Name
     short_description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-    image_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    image_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+    """Ключ файла, загруженного через /files/image."""
     months: list[Month] = Field(min_length=1, max_length=12)
     aliases: list[Alias] = Field(default_factory=list, max_length=30)
 
@@ -53,11 +54,11 @@ class SpeciesUpdate(SpeciesFields):
 
     name: Name | None = None
     short_description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
-    image_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)] | None = None
+    image_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)] | None = None
     months: list[Month] | None = Field(None, min_length=1, max_length=12)
     aliases: list[Alias] | None = Field(None, max_length=30)
 
-    @field_validator("name", "short_description", "image_url", "months", "aliases")
+    @field_validator("name", "short_description", "image_key", "months", "aliases")
     @classmethod
     def _not_null(cls, value):
         if value is None:

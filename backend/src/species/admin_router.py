@@ -22,9 +22,9 @@ async def list_species(
 
 @router.post("/species", response_model=SpeciesAdminOut, status_code=status.HTTP_201_CREATED)
 async def create_species(
-    data: SpeciesCreate, _staff: ModeratorDep, service: SpeciesAdminServiceDep
+    data: SpeciesCreate, staff: ModeratorDep, service: SpeciesAdminServiceDep
 ):
-    return await service.create(data)
+    return await service.create(data, staff)
 
 
 @router.get("/species/{species_id}", response_model=SpeciesAdminOut)
@@ -38,10 +38,10 @@ async def get_species(
 async def update_species(
     species_id: int,
     data: SpeciesUpdate,
-    _staff: ModeratorDep,
+    staff: ModeratorDep,
     service: SpeciesAdminServiceDep,
 ):
-    return await service.update(species_id, data)
+    return await service.update(species_id, data, staff)
 
 
 @router.delete("/species/{species_id}", status_code=status.HTTP_204_NO_CONTENT)

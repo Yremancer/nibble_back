@@ -4,14 +4,16 @@ from src.user.exceptions import (
     InvalidCityError,
     UserNotFoundError,
 )
+from src.storage.images import ImageService
 from src.user.models import User, UserRole
 from src.user.repository import UserRepository
 from src.user.schemas import UserUpdate
 
 
 class UserService:
-    def __init__(self, repo: UserRepository):
+    def __init__(self, repo: UserRepository, images: ImageService):
         self._repo = repo
+        self._images = images
 
     async def get_by_id(self, user_id: int) -> User | None:
         return await self._repo.get_by_id(user_id)
@@ -60,8 +62,19 @@ class UserService:
                 raise EmailAlreadyRegisteredError
         if "city_id" in values and not await self._repo.city_exists(values["city_id"]):
             raise InvalidCityError
-        return await self._repo.update(user, values)
+        old_avatar = user.avatar_url
+        if "avatar_key" in values:
+            key = values.pop("avatar_key")
+            values["avatar_url"] = (
+                await self._images.claim(key, actor, current=old_avatar) if key else None
+            )
+        user = await self._repo.update(user, values)
+        if "avatar_url" in values and values["avatar_url"] != old_avatar:
+            await self._images.release(old_avatar)
+        return user
 
     async def delete(self, user_id: int, actor: User) -> None:
         user = await self.get_user(user_id, actor)
+        avatar = user.avatar_url
         await self._repo.delete(user)
+        await self._images.release(avatar)
