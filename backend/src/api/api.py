@@ -13,6 +13,7 @@ from src.spot.router import router as spot_router
 from src.storage.router import router as storage_router
 from src.tackle.admin_router import router as tackle_admin_router
 from src.tackle.router import router as tackle_router
+from src.user.admin_router import router as user_admin_router
 from src.user.router import router as user_router
 from src.weather.router import router as weather_router
 
@@ -31,5 +32,6 @@ api_controller.include_router(spot_admin_router)
 api_controller.include_router(storage_router)
 api_controller.include_router(tackle_admin_router)
 api_controller.include_router(tackle_router)
+api_controller.include_router(user_admin_router)
 api_controller.include_router(user_router)
 api_controller.include_router(weather_router)

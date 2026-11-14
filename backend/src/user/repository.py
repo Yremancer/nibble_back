@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, tuple_
+from sqlalchemy import delete, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.city.models import City
@@ -16,6 +16,27 @@ class UserRepository:
 
     async def list_all(self) -> list[User]:
         result = await self._session.scalars(select(User).order_by(User.id))
+        return list(result)
+
+    async def admin_list(
+        self, role: str | None, q: str | None, after_id: int | None, limit: int
+    ) -> list[User]:
+        stmt = select(User)
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+        if q:
+            # "%" и "_" из запроса ищутся как обычные символы.
+            escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{escaped}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(pattern, escape="\\"),
+                    User.display_name.ilike(pattern, escape="\\"),
+                )
+            )
+        if after_id is not None:
+            stmt = stmt.where(User.id > after_id)
+        result = await self._session.scalars(stmt.order_by(User.id).limit(limit + 1))
         return list(result)
 
     async def get_by_email(self, email: str) -> User | None:
