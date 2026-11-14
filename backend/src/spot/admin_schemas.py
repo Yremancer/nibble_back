@@ -24,7 +24,6 @@ def _unique(values: list, what: str) -> list:
 
 
 class SpotFields(BaseModel):
-    """Поля, общие для создания и правки места."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -55,7 +54,6 @@ class SpotCreate(SpotFields):
 
 
 class SpotUpdate(SpotFields):
-    """Меняется только то, что передано; species_ids и method_ids заменяются целиком."""
 
     city_id: int | None = None
     name: Name | None = None

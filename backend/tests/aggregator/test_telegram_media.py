@@ -17,8 +17,7 @@ from src.aggregator.repository import (
     ClassificationRepository, MediaAttachmentRepository, RawItemRepository, TaskRepository,
 )
 from src.llm.settings import llm_settings
-from src.models.media import PostMedia
-from src.post.models import Post, Source
+from src.post.models import Post, PostMedia, Source
 from src.storage.exceptions import StorageUnavailableError
 from src.storage.models import File
 from src.storage.repository import FileRepository

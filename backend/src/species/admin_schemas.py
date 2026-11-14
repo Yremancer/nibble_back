@@ -21,7 +21,6 @@ def _unique(values: list, what: str) -> list:
 
 
 class SpeciesFields(BaseModel):
-    """Поля, общие для создания и правки вида."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -51,7 +50,6 @@ class SpeciesCreate(SpeciesFields):
 
 
 class SpeciesUpdate(SpeciesFields):
-    """Меняется только то, что передано; months и aliases заменяются целиком."""
 
     name: Name | None = None
     short_description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None

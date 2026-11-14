@@ -5,8 +5,6 @@ from zoneinfo import ZoneInfo
 
 from src.auth.exceptions import AuthenticationError
 from src.city.repository import CityRepository
-from src.models.media import MediaType, PostMedia
-from src.post.models import Comment, Post, PostKind, PostSpecies, PostStatus, SourceType
 from src.post.exceptions import (
     CommentForbiddenError,
     CommentNotFoundError,
@@ -15,6 +13,16 @@ from src.post.exceptions import (
     KlevSourceMissingError,
     PostForbiddenError,
     PostNotFoundError,
+)
+from src.post.models import (
+    Comment,
+    MediaType,
+    Post,
+    PostKind,
+    PostMedia,
+    PostSpecies,
+    PostStatus,
+    SourceType,
 )
 from src.post.repository import PostEngagement, PostRepository
 from src.post.schemas import (
@@ -361,7 +369,6 @@ class PostService:
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
-        # reveal: модератору место и дата нужны целиком, чтобы проверять посты.
         own = reveal or (viewer is not None and post.author_id == viewer.id)
         return PostOut(
             id=post.id,

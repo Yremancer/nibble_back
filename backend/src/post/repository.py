@@ -5,11 +5,11 @@ from sqlalchemy import Select, delete, exists, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from src.models.media import PostMedia
 from src.post.models import (
     Comment,
     Post,
     PostLike,
+    PostMedia,
     PostSpecies,
     PostStatus,
     Source,
@@ -61,7 +61,6 @@ class PostRepository:
         viewer_id: int | None = None,
     ) -> list[Post]:
         stmt = self._visible()
-        # Автору в своей истории видно то, что скрыто от остальных (ТЗ 4.3).
         own_history = viewer_id is not None and query.author_id == viewer_id
         if query.city_id is not None:
             stmt = stmt.where(
@@ -110,7 +109,6 @@ class PostRepository:
     async def admin_feed(
         self, query: AdminPostQuery, after: tuple[datetime, int] | None
     ) -> list[Post]:
-        """Посты любого статуса, включая скрытые и дубли."""
         stmt = self._with_card_data(
             select(Post).join(Source, Source.id == Post.source_id)
         )

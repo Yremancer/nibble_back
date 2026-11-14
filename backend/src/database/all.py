@@ -2,7 +2,7 @@ from src.aggregator import models as aggregator_models  # noqa: F401
 from src.auth import models as auth_models  # noqa: F401
 from src.city import models as city_models  # noqa: F401
 from src.depth import models as depth_models  # noqa: F401
-from src.models import listing, media, tackle  # noqa: F401
+from src.models import listing, tackle  # noqa: F401
 from src.post import models as post_models  # noqa: F401
 from src.species import models as species_models  # noqa: F401
 from src.spot import models as spot_models  # noqa: F401

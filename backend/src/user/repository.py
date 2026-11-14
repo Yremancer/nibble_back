@@ -45,7 +45,6 @@ class UserRepository:
         )
 
     async def follow_counts(self, user_id: int) -> tuple[int, int]:
-        """(подписчики, подписки)"""
         followers = await self._session.scalar(
             select(func.count())
             .select_from(Subscription)

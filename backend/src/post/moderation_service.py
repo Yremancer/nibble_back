@@ -62,7 +62,6 @@ class PostModerationService(PostService):
             data.method_id if "method_id" in sent else None,
             [c.species_id for c in data.species] if data.species else [],
         )
-        # Зафиксированные поля повторный импорт не перезаписывает (см. aggregator/writer/posts.py).
         stamp = {"by": staff.id, "at": datetime.now(UTC).isoformat()}
         managed = dict(post.managed_fields or {})
         if "status" in sent:

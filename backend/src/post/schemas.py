@@ -9,8 +9,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from src.models.media import MediaType
-from src.post.models import PostKind, PostStatus, SourceType
+from src.post.models import MediaType, PostKind, PostStatus, SourceType
 
 PostText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=5000)
@@ -184,7 +183,6 @@ class CommentCreate(BaseModel):
 
 
 class CommentOut(BaseModel):
-    """У скрытого модератором комментария text и author равны null."""
 
     id: int
     post_id: int
@@ -221,7 +219,6 @@ class AdminPostPage(BaseModel):
 
 
 class AdminPostUpdate(BaseModel):
-    """Меняется только то, что передано. Привязка к месту, способу и рыбе только у импортированных постов."""
 
     model_config = ConfigDict(extra="forbid")
 

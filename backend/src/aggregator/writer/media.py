@@ -2,8 +2,7 @@
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.listing import ListingMedia
-from src.models.media import PostMedia
-from src.post.models import Post
+from src.post.models import Post, PostMedia
 
 
 class PostMediaWriter:
