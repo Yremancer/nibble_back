@@ -15,7 +15,7 @@ from src.post.models import (
     Source,
     SourceType,
 )
-from src.post.schemas import FeedQuery
+from src.post.schemas import AdminPostQuery, FeedQuery
 from src.spot.models import Spot
 from src.user.models import Subscription, User
 
@@ -107,6 +107,37 @@ class PostRepository:
         )
         return list(await self.session.scalars(stmt))
 
+    async def admin_feed(
+        self, query: AdminPostQuery, after: tuple[datetime, int] | None
+    ) -> list[Post]:
+        """Посты любого статуса, включая скрытые и дубли."""
+        stmt = self._with_card_data(
+            select(Post).join(Source, Source.id == Post.source_id)
+        )
+        if query.status is not None:
+            stmt = stmt.where(Post.status == query.status.value)
+        if query.source is not None:
+            stmt = stmt.where(Source.type == query.source.value)
+        if query.kind is not None:
+            stmt = stmt.where(Post.kind == query.kind.value)
+        if query.author_id is not None:
+            stmt = stmt.where(Post.author_id == query.author_id)
+        if after is not None:
+            stmt = stmt.where(tuple_(Post.published_at, Post.id) < tuple_(*after))
+        stmt = stmt.order_by(Post.published_at.desc(), Post.id.desc()).limit(
+            query.limit + 1
+        )
+        return list(await self.session.scalars(stmt))
+
+    async def post_exists(self, post_id: int) -> bool:
+        return await self.session.get(Post, post_id) is not None
+
+    async def get_comment_by_id(self, comment_id: int) -> Comment | None:
+        return await self.session.get(Comment, comment_id)
+
+    async def get_user(self, user_id: int) -> User | None:
+        return await self.session.get(User, user_id)
+
     async def followed_author_ids(
         self, viewer_id: int, author_ids: list[int]
     ) -> set[int]:
@@ -184,7 +215,11 @@ class PostRepository:
         if not post_ids:
             return {}
         likes = select(func.count()).where(PostLike.post_id == Post.id).scalar_subquery()
-        comments = select(func.count()).where(Comment.post_id == Post.id).scalar_subquery()
+        comments = (
+            select(func.count())
+            .where(Comment.post_id == Post.id, Comment.is_hidden.is_(False))
+            .scalar_subquery()
+        )
         liked = exists().where(PostLike.post_id == Post.id, PostLike.user_id == user_id)
         rows = await self.session.execute(
             select(Post.id, likes, comments, liked).where(Post.id.in_(post_ids))

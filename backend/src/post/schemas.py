@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 from src.models.media import MediaType
-from src.post.models import PostKind, SourceType
+from src.post.models import PostKind, PostStatus, SourceType
 
 PostText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=5000)
@@ -184,14 +184,82 @@ class CommentCreate(BaseModel):
 
 
 class CommentOut(BaseModel):
+    """У скрытого модератором комментария text и author равны null."""
+
+    id: int
+    post_id: int
+    parent_id: int | None
+    text: str | None
+    author: AuthorOut | None
+    created_at: datetime
+    is_hidden: bool
+
+
+class CommentPage(BaseModel):
+    items: list[CommentOut]
+    next_cursor: int | None
+
+
+class AdminPostQuery(BaseModel):
+    status: PostStatus | None = None
+    source: SourceType | None = None
+    kind: PostKind | None = None
+    author_id: int | None = None
+    cursor: str | None = None
+    limit: int = Field(20, ge=1, le=50)
+
+
+class AdminPostOut(PostOut):
+    status: PostStatus
+    canonical_post_id: int | None
+    managed_fields: list[str]
+
+
+class AdminPostPage(BaseModel):
+    items: list[AdminPostOut]
+    next_cursor: str | None
+
+
+class AdminPostUpdate(BaseModel):
+    """Меняется только то, что передано. Привязка к месту, способу и рыбе только у импортированных постов."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: PostStatus | None = None
+    spot_id: int | None = None
+    method_id: int | None = None
+    species: list[CatchIn] | None = Field(None, max_length=10)
+
+    @field_validator("status", "species")
+    @classmethod
+    def _not_null(cls, value):
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("species")
+    @classmethod
+    def _species_unique(cls, value: list[CatchIn]) -> list[CatchIn]:
+        _check_unique([c.species_id for c in value], "species")
+        return value
+
+
+class CommentHide(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_hidden: bool
+
+
+class AdminCommentOut(BaseModel):
     id: int
     post_id: int
     parent_id: int | None
     text: str
     author: AuthorOut
     created_at: datetime
+    is_hidden: bool
 
 
-class CommentPage(BaseModel):
-    items: list[CommentOut]
+class AdminCommentPage(BaseModel):
+    items: list[AdminCommentOut]
     next_cursor: int | None
