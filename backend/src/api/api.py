@@ -4,6 +4,7 @@ from src.auth.router import router as auth_router
 from src.city.router import router as city_router
 from src.depth.router import router as depth_router
 from src.post.router import router as post_router
+from src.search.router import router as search_router
 from src.species.router import router as species_router
 from src.spot.router import router as spot_router
 from src.storage.router import router as storage_router
@@ -16,6 +17,7 @@ api_controller.include_router(auth_router)
 api_controller.include_router(city_router)
 api_controller.include_router(depth_router)
 api_controller.include_router(post_router)
+api_controller.include_router(search_router)
 api_controller.include_router(species_router)
 api_controller.include_router(spot_router)
 api_controller.include_router(storage_router)
