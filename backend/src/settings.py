@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: SecretStr = Field(min_length=JWT_SECRET_MIN_LENGTH)
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"
+    AUTH_REFRESH_COOKIE_SECURE: bool = True
     AUTH_PASSWORD_MIN_LENGTH: int = 8
 
     S3_ENDPOINT_URL: str

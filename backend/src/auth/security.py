@@ -1,5 +1,8 @@
 import asyncio
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import jwt
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -9,6 +12,7 @@ from src.auth.constants import (
     JWT_ACCESS_TOKEN_TYPE,
     JWT_ALGORITHM,
     JWT_REQUIRED_CLAIMS,
+    REFRESH_TOKEN_BYTES,
 )
 from src.auth.exceptions import AuthenticationError
 from src.settings import settings
@@ -30,11 +34,20 @@ async def verify_password(password: str, hashed: str | None) -> bool:
         return False
 
 
-def create_access_token(user_id: int) -> str:
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_access_token(user_id: int, session_id: UUID) -> str:
     now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": str(user_id),
+            "sid": str(session_id),
             "iat": now,
             "exp": now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
             "type": JWT_ACCESS_TOKEN_TYPE,
@@ -44,7 +57,7 @@ def create_access_token(user_id: int) -> str:
     )
 
 
-def decode_access_token(token: str) -> int:
+def decode_access_token(token: str) -> tuple[int, UUID]:
     try:
         payload = jwt.decode(
             token,
@@ -53,8 +66,9 @@ def decode_access_token(token: str) -> int:
             options={"require": JWT_REQUIRED_CLAIMS},
         )
         user_id = int(payload["sub"])
+        session_id = UUID(str(payload["sid"]))
         if payload["type"] != JWT_ACCESS_TOKEN_TYPE:
             raise AuthenticationError
-        return user_id
+        return user_id, session_id
     except (jwt.InvalidTokenError, ValueError, TypeError) as exc:
         raise AuthenticationError from exc
