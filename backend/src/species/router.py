@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from src.species.deps import SpeciesServiceDep
-from src.species.schemas import FishingMethodOut, Season, SpeciesOut, SpeciesShort
+from src.species.schemas import FishingMethodOut, Season, SpeciesDetail, SpeciesShort
 
 router = APIRouter(tags=["species"])
 
@@ -14,7 +14,7 @@ async def list_species(
     return await service.list_species(q, season)
 
 
-@router.get("/species/{species_id}", response_model=SpeciesOut)
+@router.get("/species/{species_id}", response_model=SpeciesDetail)
 async def get_species(species_id: int, service: SpeciesServiceDep):
     return await service.get_species(species_id)
 

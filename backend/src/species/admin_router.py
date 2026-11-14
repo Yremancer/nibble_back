@@ -3,6 +3,7 @@ from src.auth.deps import ModeratorDep
 from src.species.admin_schemas import (
     MethodCreate,
     MethodUpdate,
+    SpeciesAdminDetail,
     SpeciesAdminOut,
     SpeciesCreate,
     SpeciesUpdate,
@@ -20,21 +21,21 @@ async def list_species(
     return await service.list_species(q)
 
 
-@router.post("/species", response_model=SpeciesAdminOut, status_code=status.HTTP_201_CREATED)
+@router.post("/species", response_model=SpeciesAdminDetail, status_code=status.HTTP_201_CREATED)
 async def create_species(
     data: SpeciesCreate, staff: ModeratorDep, service: SpeciesAdminServiceDep
 ):
     return await service.create(data, staff)
 
 
-@router.get("/species/{species_id}", response_model=SpeciesAdminOut)
+@router.get("/species/{species_id}", response_model=SpeciesAdminDetail)
 async def get_species(
     species_id: int, _staff: ModeratorDep, service: SpeciesAdminServiceDep
 ):
     return await service.get_species(species_id)
 
 
-@router.patch("/species/{species_id}", response_model=SpeciesAdminOut)
+@router.patch("/species/{species_id}", response_model=SpeciesAdminDetail)
 async def update_species(
     species_id: int,
     data: SpeciesUpdate,

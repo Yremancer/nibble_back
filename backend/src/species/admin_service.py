@@ -1,6 +1,8 @@
+from src.exceptions import ReferenceNotFoundError
 from src.species.admin_schemas import (
     MethodCreate,
     MethodUpdate,
+    SpeciesAdminDetail,
     SpeciesAdminOut,
     SpeciesCreate,
     SpeciesUpdate,
@@ -15,7 +17,7 @@ from src.species.exceptions import (
 )
 from src.species.models import FishingMethod, Species, SpeciesMonth
 from src.species.repository import SpeciesRepository
-from src.species.schemas import FishingMethodOut
+from src.species.schemas import FishingMethodOut, SpeciesSpot
 from src.storage.images import ImageService
 from src.user.models import User
 
@@ -42,10 +44,11 @@ class SpeciesAdminService:
             [SpeciesAdminOut.model_validate(s) for s in species], "image_url"
         )
 
-    async def get_species(self, species_id: int) -> SpeciesAdminOut:
+    async def get_species(self, species_id: int) -> SpeciesAdminDetail:
         return await self._out(await self._require(species_id))
 
-    async def create(self, data: SpeciesCreate, staff: User) -> SpeciesAdminOut:
+    async def create(self, data: SpeciesCreate, staff: User) -> SpeciesAdminDetail:
+        await self._check_spots(data.spot_ids)
         if await self.repo.name_taken(data.name):
             raise SpeciesAlreadyExistsError
         image = await self.images.claim(data.image_key, staff)
@@ -62,13 +65,16 @@ class SpeciesAdminService:
             months=[SpeciesMonth(month=m) for m in sorted(data.months)],
         )
         await self.repo.add(species)
+        await self.repo.replace_spots(species.id, set(data.spot_ids))
         return await self._out(species)
 
     async def update(
         self, species_id: int, data: SpeciesUpdate, staff: User
-    ) -> SpeciesAdminOut:
+    ) -> SpeciesAdminDetail:
         species = await self._require(species_id)
         sent = data.model_fields_set
+        if data.spot_ids is not None:
+            await self._check_spots(data.spot_ids)
         if "name" in sent and await self.repo.name_taken(
             data.name, except_id=species.id
         ):
@@ -87,6 +93,8 @@ class SpeciesAdminService:
                 current.get(month) or SpeciesMonth(month=month)
                 for month in sorted(data.months)
             ]
+        if data.spot_ids is not None:
+            await self.repo.replace_spots(species.id, set(data.spot_ids))
         await self.repo.flush()
         if species.image_url != old_image:
             await self.images.release(old_image)
@@ -123,8 +131,19 @@ class SpeciesAdminService:
             raise MethodInUseError(f"Fishing method is used in {used} posts")
         await self.repo.delete_method(method)
 
-    async def _out(self, species: Species) -> SpeciesAdminOut:
-        return await self.images.apply_one(SpeciesAdminOut.model_validate(species), "image_url")
+    async def _check_spots(self, spot_ids: list[int]) -> None:
+        if spot_ids:
+            missing = set(spot_ids) - await self.repo.existing_spot_ids(spot_ids)
+            if missing:
+                raise ReferenceNotFoundError(f"Spots not found: {sorted(missing)}")
+
+    async def _out(self, species: Species) -> SpeciesAdminDetail:
+        out = await self.images.apply_one(
+            SpeciesAdminDetail.model_validate(species), "image_url"
+        )
+        spots = await self.repo.list_spots(species.id, active_only=False)
+        out.spots = [SpeciesSpot.model_validate(s) for s in spots]
+        return out
 
     async def _require(self, species_id: int) -> Species:
         species = await self.repo.get(species_id)

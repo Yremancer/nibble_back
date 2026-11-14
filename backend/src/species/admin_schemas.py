@@ -7,7 +7,7 @@ from pydantic import (
     StringConstraints,
     field_validator,
 )
-from src.species.schemas import SpeciesOut
+from src.species.schemas import SpeciesOut, SpeciesSpot
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Alias = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -43,8 +43,9 @@ class SpeciesCreate(SpeciesFields):
     """Ключ файла, загруженного через /files/image."""
     months: list[Month] = Field(min_length=1, max_length=12)
     aliases: list[Alias] = Field(default_factory=list, max_length=30)
+    spot_ids: list[int] = Field(default_factory=list, max_length=500)
 
-    @field_validator("months", "aliases")
+    @field_validator("months", "aliases", "spot_ids")
     @classmethod
     def _no_repeats(cls, value: list) -> list:
         return _unique(value, "list items")
@@ -57,8 +58,11 @@ class SpeciesUpdate(SpeciesFields):
     image_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)] | None = None
     months: list[Month] | None = Field(None, min_length=1, max_length=12)
     aliases: list[Alias] | None = Field(None, max_length=30)
+    spot_ids: list[int] | None = Field(None, max_length=500)
 
-    @field_validator("name", "short_description", "image_key", "months", "aliases")
+    @field_validator(
+        "name", "short_description", "image_key", "months", "aliases", "spot_ids"
+    )
     @classmethod
     def _not_null(cls, value):
         if value is None:
@@ -73,6 +77,10 @@ class SpeciesAdminOut(SpeciesOut):
     @classmethod
     def _aliases(cls, value: list[str] | None) -> list[str]:
         return value or []
+
+
+class SpeciesAdminDetail(SpeciesAdminOut):
+    spots: list[SpeciesSpot] = []
 
 
 class MethodCreate(BaseModel):
