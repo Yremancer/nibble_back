@@ -33,7 +33,13 @@ class UserService:
         return user
 
     async def create(
-        self, *, email: str, password_hash: str, display_name: str, city_id: int
+        self,
+        *,
+        email: str,
+        password_hash: str,
+        display_name: str,
+        city_id: int,
+        role: UserRole = UserRole.USER,
     ) -> User:
         email = email.lower()
         if await self.get_by_email(email) is not None:
@@ -46,7 +52,7 @@ class UserService:
                 password_hash=password_hash,
                 display_name=display_name,
                 city_id=city_id,
-                role=UserRole.USER,
+                role=role,
             )
         )
 
@@ -55,6 +61,9 @@ class UserService:
         values = data.model_dump(exclude_unset=True)
         if "role" in values and actor.role != UserRole.ADMIN:
             raise ForbiddenError
+        if "role" in values and user.id == actor.id and values["role"] != user.role:
+            # Иначе единственный админ мог бы случайно лишить себя прав.
+            raise ForbiddenError("You cannot change your own role")
         if "email" in values:
             values["email"] = values["email"].lower()
             existing = await self.get_by_email(values["email"])
