@@ -31,7 +31,6 @@ class CityRef(BaseModel):
 
 
 class ProfileOut(BaseModel):
-    """Публичный профиль: без email и роли."""
 
     id: int
     display_name: str

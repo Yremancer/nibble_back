@@ -7,7 +7,6 @@ ESCAPE = "\\"
 
 
 def _escape_like(text: str) -> str:
-    # Иначе "%" и "_" в запросе работали бы как подстановочные знаки.
     return (
         text.replace(ESCAPE, ESCAPE * 2).replace("%", ESCAPE + "%").replace("_", ESCAPE + "_")
     )

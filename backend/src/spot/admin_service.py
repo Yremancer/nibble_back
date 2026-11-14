@@ -88,7 +88,6 @@ class SpotAdminService:
         return await self._out(spot)
 
     async def deactivate(self, spot_id: int) -> None:
-        # Посты, погода и импорт ссылаются на место, поэтому "удаление" только прячет его с карты.
         spot = await self._require(spot_id)
         spot.is_active = False
         await self.repo.flush()

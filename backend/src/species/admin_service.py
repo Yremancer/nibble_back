@@ -70,7 +70,6 @@ class SpeciesAdminService:
             if field in sent:
                 setattr(species, field, getattr(data, field))
         if data.months is not None:
-            # Существующие строки переиспользуем: пересоздание нарушило бы первичный ключ.
             current = {m.month: m for m in species.months}
             species.months = [
                 current.get(month) or SpeciesMonth(month=month)
@@ -83,7 +82,6 @@ class SpeciesAdminService:
         species = await self._require(species_id)
         used = await self.repo.count_posts_with_species(species.id)
         if used:
-            # Иначе вид молча пропал бы из чужих отчётов (связь с постами каскадная).
             raise SpeciesInUseError(f"Species is used in {used} posts")
         await self.repo.delete(species)
 

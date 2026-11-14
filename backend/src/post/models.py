@@ -20,6 +20,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.base import Base, enum_check
+from src.storage.models import File
+
+
+class MediaType(StrEnum):
+    PHOTO = "photo"
+    VIDEO = "video"
 
 
 class SourceType(StrEnum):
@@ -112,7 +118,7 @@ class Post(Base):
     author: Mapped["User | None"] = relationship()  # noqa: F821
     spot: Mapped["Spot | None"] = relationship()  # noqa: F821
     method: Mapped["FishingMethod | None"] = relationship()  # noqa: F821
-    media: Mapped[list["PostMedia"]] = relationship(  # noqa: F821
+    media: Mapped[list["PostMedia"]] = relationship(
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="PostMedia.sort_order",
@@ -171,4 +177,23 @@ class Comment(Base):
     is_hidden: Mapped[bool] = mapped_column(
         Boolean, server_default=sql_text("false")
     )
-    """Скрыт модератором: в ленте остаётся заглушка, чтобы не рвать ветку ответов."""
+
+
+class PostMedia(Base):
+    __tablename__ = "post_media"
+    __table_args__ = (
+        enum_check("type", MediaType),
+        UniqueConstraint("post_id", "media_file_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), index=True
+    )
+    media_file_id: Mapped[int] = mapped_column(
+        ForeignKey("files.id", ondelete="RESTRICT"), index=True
+    )
+    type: Mapped[str] = mapped_column(String(10))
+    sort_order: Mapped[int] = mapped_column(SmallInteger, server_default=sql_text("0"))
+
+    media_file: Mapped["File"] = relationship()
