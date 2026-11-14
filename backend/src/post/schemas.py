@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Annotated
 
 from pydantic import (
@@ -60,6 +60,15 @@ class PostFields(BaseModel):
     bait: Annotated[str, StringConstraints(max_length=255)] | None = None
     conditions: Annotated[str, StringConstraints(max_length=2000)] | None = None
     fishing_date: date | None = None
+    fishing_time: time | None = None
+
+    @field_validator("fishing_time", mode="before")
+    @classmethod
+    def _time_as_text(cls, value):
+        # Иначе число принялось бы за секунды от полуночи.
+        if value is not None and not isinstance(value, str | time):
+            raise ValueError("must be a time string like 06:30")
+        return value
 
 
 class PostCreate(PostFields):
@@ -68,6 +77,12 @@ class PostCreate(PostFields):
     species: list[CatchIn] = Field(default_factory=list, max_length=10)
     show_spot: bool = True
     show_date: bool = True
+
+    @model_validator(mode="after")
+    def _time_needs_date(self) -> "PostCreate":
+        if self.fishing_time is not None and self.fishing_date is None:
+            raise ValueError("fishing_time requires fishing_date")
+        return self
 
     @field_validator("media")
     @classmethod
@@ -155,6 +170,7 @@ class PostOut(BaseModel):
     conditions: str | None
     published_at: datetime
     fishing_date: date | None
+    fishing_time: time | None
     event_date: date | None
     source: SourceOut
     author: PostAuthorOut | None
