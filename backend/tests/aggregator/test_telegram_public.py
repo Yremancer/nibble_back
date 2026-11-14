@@ -45,6 +45,21 @@ def public_client(handler):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
+async def test_preview_overrides_short_shared_client_timeout():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, text=page_html(post_html(10)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond), timeout=2.0) as client:
+        posts = [post async for post in PublicTelegramCollector(client, "public_test").iter_preview()]
+    assert len(posts) == 1
+    assert requests[0].extensions["timeout"] == {
+        "connect": 10.0, "read": 30.0, "write": 30.0, "pool": 30.0,
+    }
+
+
 async def test_public_parser_keeps_album_order_text_identity_and_counters():
     async with public_client(lambda request: httpx.Response(200, text=page_html(post_html(10, album=True)))) as client:
         collector = PublicTelegramCollector(client, "public_test")

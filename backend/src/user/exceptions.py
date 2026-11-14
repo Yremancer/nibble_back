@@ -12,3 +12,8 @@ class EmailAlreadyRegisteredError(ConflictError):
 class InvalidCityError(AppError):
     status_code = 422
     detail = "City does not exist"
+
+
+class CannotFollowSelfError(AppError):
+    status_code = 422
+    detail = "You cannot follow yourself"

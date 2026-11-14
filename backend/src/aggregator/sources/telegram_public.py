@@ -27,7 +27,10 @@ class PublicTelegramCollector:
         url = f"https://t.me/s/{self._channel}"
         if message_id:
             url += f"/{message_id}"
-        response = await self._client.get(url, params={"before": before} if before else None)
+        response = await self._client.get(
+            url, params={"before": before} if before else None,
+            timeout=httpx.Timeout(30.0, connect=10.0),
+        )
         response.raise_for_status()
         page = HTMLParser(response.text)
         if not page.css(".tgme_widget_message[data-post]"):

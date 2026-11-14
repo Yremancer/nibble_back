@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 from src.user.models import UserRole
 
 
@@ -16,6 +23,44 @@ class UserResponse(BaseModel):
     avatar_url: str | None
     bio: str | None
     created_at: datetime
+
+
+class CityRef(BaseModel):
+    id: int
+    name: str
+
+
+class ProfileOut(BaseModel):
+    """Публичный профиль: без email и роли."""
+
+    id: int
+    display_name: str
+    avatar_url: str | None
+    bio: str | None
+    city: CityRef
+    created_at: datetime
+    posts_count: int
+    followers_count: int
+    following_count: int
+    is_following: bool
+    is_me: bool
+
+
+class UserBrief(BaseModel):
+    id: int
+    display_name: str
+    avatar_url: str | None
+    is_following: bool
+
+
+class UserPage(BaseModel):
+    items: list[UserBrief]
+    next_cursor: str | None
+
+
+class FollowListQuery(BaseModel):
+    cursor: str | None = None
+    limit: int = Field(20, ge=1, le=100)
 
 
 class UserUpdate(BaseModel):

@@ -7,6 +7,7 @@ from pydantic import (
     Field,
     StringConstraints,
     field_validator,
+    model_validator,
 )
 from src.models.media import MediaType
 from src.post.models import PostKind, SourceType
@@ -29,8 +30,18 @@ class FeedQuery(BaseModel):
     spot_id: int | None = None
     species_id: int | None = None
     kind: PostKind | None = None
+    author_id: int | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    following: bool = False
     cursor: str | None = None
     limit: int = Field(20, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def _date_range(self) -> "FeedQuery":
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from must not be later than date_to")
+        return self
 
 
 class CatchIn(BaseModel):
@@ -111,6 +122,10 @@ class AuthorOut(BaseModel):
     avatar_url: str | None
 
 
+class PostAuthorOut(AuthorOut):
+    is_following: bool
+
+
 class SpotRef(BaseModel):
     id: int
     name: str
@@ -143,7 +158,7 @@ class PostOut(BaseModel):
     fishing_date: date | None
     event_date: date | None
     source: SourceOut
-    author: AuthorOut | None
+    author: PostAuthorOut | None
     spot: SpotRef | None
     method: MethodRef | None
     species: list[CatchOut]
