@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from fastapi import Response
-from src.auth.constants import REFRESH_COOKIE_PATH
 from src.settings import settings
 
 
@@ -10,7 +9,7 @@ def set_refresh_cookie(response: Response, token: str, expires_at: datetime) -> 
         key=settings.AUTH_REFRESH_COOKIE_NAME,
         value=token,
         expires=expires_at,
-        path=REFRESH_COOKIE_PATH,
+        path=settings.AUTH_REFRESH_COOKIE_PATH,
         secure=settings.AUTH_REFRESH_COOKIE_SECURE,
         httponly=True,
         samesite="lax",
@@ -21,7 +20,7 @@ def set_refresh_cookie(response: Response, token: str, expires_at: datetime) -> 
 def delete_refresh_cookie(response: Response) -> None:
     response.delete_cookie(
         key=settings.AUTH_REFRESH_COOKIE_NAME,
-        path=REFRESH_COOKIE_PATH,
+        path=settings.AUTH_REFRESH_COOKIE_PATH,
         secure=settings.AUTH_REFRESH_COOKIE_SECURE,
         httponly=True,
         samesite="lax",

@@ -73,7 +73,6 @@ class UserUpdate(BaseModel):
     avatar_key: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)] | None
     ) = None
-    """Ключ файла, загруженного через /files/image; null убирает аватар."""
     bio: str | None = None
     role: UserRole | None = None
 

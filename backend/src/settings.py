@@ -19,13 +19,13 @@ class Settings(BaseSettings):
 
     WEATHER_CACHE_TTL_MINUTES: int = 15
 
-    # Метка, которую получают исходящие ссылки на Farpost (ТЗ F-72). Пусто: не добавлять.
     TACKLE_UTM_PARAMS: str = "utm_source=klev&utm_medium=referral"
 
     JWT_SECRET_KEY: SecretStr = Field(min_length=JWT_SECRET_MIN_LENGTH)
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     AUTH_REFRESH_COOKIE_NAME: str = "refresh_token"
+    AUTH_REFRESH_COOKIE_PATH: str = "/auth"
     AUTH_REFRESH_COOKIE_SECURE: bool = True
     AUTH_PASSWORD_MIN_LENGTH: int = 8
 

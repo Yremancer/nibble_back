@@ -71,7 +71,6 @@ class FileService:
         record = await self._repo.get_by_key(key)
         if record is None:
             raise FileNotFoundInStorageError
-        # Пустой владелец (файлы парсера) не значит "любой": такие файлы удаляет только персонал.
         if record.uploaded_by != actor.id and actor.role not in STAFF_ROLES:
             raise FileForbiddenError
 

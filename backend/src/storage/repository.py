@@ -28,7 +28,6 @@ class FileRepository:
         await self._session.flush()
 
     async def used_as_image(self, keys: list[str]) -> set[str]:
-        """Какие из ключей уже служат аватаром, фото места или картинкой вида."""
         used: set[str] = set()
         for column in (User.avatar_url, Spot.photo_url, Species.image_url):
             used |= set(await self._session.scalars(select(column).where(column.in_(keys))))

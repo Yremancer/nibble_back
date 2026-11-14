@@ -15,10 +15,6 @@ M = TypeVar("M", bound=BaseModel)
 
 
 class ImageService:
-    """Аватары, фото мест и картинки видов: в базе лежит ключ файла, наружу отдаётся ссылка.
-
-    Значения, которых нет среди файлов (старые строки-ссылки), отдаются как есть.
-    """
 
     def __init__(self, files: FileRepository, storage: StorageClient) -> None:
         self.files = files
@@ -44,7 +40,6 @@ class ImageService:
         return (await self.apply([item], field))[0]
 
     async def claim(self, key: str, actor: User, *, current: str | None = None) -> str:
-        """Проверяет, что файл можно сделать картинкой: свой, настоящая картинка, нигде не занят."""
         if key == current:
             return key
         file = await self.files.get_by_key(key)
@@ -59,7 +54,6 @@ class ImageService:
         return key
 
     async def release(self, value: str | None) -> None:
-        """Удаляет файл, который больше не нужен; старые строки-ссылки не трогает."""
         if not value:
             return
         file = await self.files.get_by_key(value)
@@ -69,5 +63,4 @@ class ImageService:
         try:
             await self.storage.delete(value)
         except StorageUnavailableError:
-            # Запись уже заменена; лишний объект в хранилище лучше, чем отказ пользователю.
             logger.warning("Failed to delete %s from storage", value)

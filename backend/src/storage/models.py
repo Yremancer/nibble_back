@@ -17,4 +17,3 @@ class File(Base):
     uploaded_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
-    """Кто загрузил файл. NULL у файлов системы (парсер) и у файлов удалённых пользователей."""

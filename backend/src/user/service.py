@@ -62,7 +62,6 @@ class UserService:
         if "role" in values and actor.role != UserRole.ADMIN:
             raise ForbiddenError
         if "role" in values and user.id == actor.id and values["role"] != user.role:
-            # Иначе единственный админ мог бы случайно лишить себя прав.
             raise ForbiddenError("You cannot change your own role")
         if "email" in values:
             values["email"] = values["email"].lower()

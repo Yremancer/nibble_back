@@ -30,7 +30,6 @@ class SpotFields(BaseModel):
     area: Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)] | None = None
     description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=5000)] | None = None
     photo_key: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
-    """Ключ файла, загруженного через /files/image; пусто или null убирает фото."""
 
     @field_validator("area", "description", "photo_key")
     @classmethod

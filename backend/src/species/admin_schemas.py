@@ -40,7 +40,6 @@ class SpeciesCreate(SpeciesFields):
     name: Name
     short_description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     image_key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
-    """Ключ файла, загруженного через /files/image."""
     months: list[Month] = Field(min_length=1, max_length=12)
     aliases: list[Alias] = Field(default_factory=list, max_length=30)
     spot_ids: list[int] = Field(default_factory=list, max_length=500)

@@ -25,7 +25,6 @@ class UserRepository:
         if role is not None:
             stmt = stmt.where(User.role == role)
         if q:
-            # "%" и "_" из запроса ищутся как обычные символы.
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{escaped}%"
             stmt = stmt.where(
