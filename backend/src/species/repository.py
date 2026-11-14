@@ -1,7 +1,8 @@
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.post.models import Post, PostSpecies
+from src.spot.models import Spot, SpotSpecies, SpotSpeciesSource
 from src.species.models import FishingMethod, Species, SpeciesMonth
 
 
@@ -107,3 +108,40 @@ class SpeciesRepository:
         return await self.session.scalar(
             select(func.count()).select_from(Post).where(Post.method_id == method_id)
         )
+
+    async def list_spots(self, species_id: int, *, active_only: bool) -> list[Spot]:
+        stmt = (
+            select(Spot)
+            .join(SpotSpecies, SpotSpecies.spot_id == Spot.id)
+            .where(SpotSpecies.species_id == species_id)
+        )
+        if active_only:
+            stmt = stmt.where(Spot.is_active.is_(True))
+        return list(await self.session.scalars(stmt.order_by(Spot.name, Spot.id)))
+
+    async def existing_spot_ids(self, spot_ids: list[int]) -> set[int]:
+        result = await self.session.scalars(select(Spot.id).where(Spot.id.in_(spot_ids)))
+        return set(result)
+
+    async def replace_spots(self, species_id: int, spot_ids: set[int]) -> None:
+        current = set(
+            await self.session.scalars(
+                select(SpotSpecies.spot_id).where(SpotSpecies.species_id == species_id)
+            )
+        )
+        if current - spot_ids:
+            await self.session.execute(
+                delete(SpotSpecies).where(
+                    SpotSpecies.species_id == species_id,
+                    SpotSpecies.spot_id.in_(current - spot_ids),
+                )
+            )
+        self.session.add_all(
+            SpotSpecies(
+                spot_id=spot_id,
+                species_id=species_id,
+                data_source=SpotSpeciesSource.MODERATOR.value,
+            )
+            for spot_id in spot_ids - current
+        )
+        await self.session.flush()

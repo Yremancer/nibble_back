@@ -1,3 +1,4 @@
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -46,3 +47,16 @@ class FishingMethodOut(BaseModel):
 
     id: int
     name: str
+
+
+class SpeciesSpot(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    lat: Decimal
+    lon: Decimal
+
+
+class SpeciesDetail(SpeciesOut):
+    spots: list[SpeciesSpot] = []
