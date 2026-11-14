@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -11,6 +11,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -86,6 +87,8 @@ class Post(Base):
     bait: Mapped[str | None] = mapped_column(String(255))
     conditions: Mapped[str | None] = mapped_column(Text)
     fishing_date: Mapped[date | None] = mapped_column(Date)
+    fishing_time: Mapped[time | None] = mapped_column(Time)
+    """Местное время выезда (часовой пояс города); без fishing_date не бывает."""
     show_spot: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("true"))
     show_date: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("true"))
     external_post_id: Mapped[str | None] = mapped_column(String(100))

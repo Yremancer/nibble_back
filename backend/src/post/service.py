@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from src.auth.exceptions import AuthenticationError
@@ -47,6 +47,7 @@ from src.species.repository import SpeciesRepository
 from src.spot.repository import SpotRepository
 from src.storage.client import StorageClient
 from src.storage.exceptions import StorageUnavailableError
+from src.storage.images import ImageService
 from src.storage.models import File
 from src.storage.repository import FileRepository
 from src.user.models import User, UserRole
@@ -58,7 +59,6 @@ SCALAR_FIELDS = (
     "text",
     "bait",
     "conditions",
-    "fishing_date",
     "spot_id",
     "method_id",
     "show_spot",
@@ -87,6 +87,7 @@ class PostService:
         self.files = files
         self.cities = cities
         self.storage = storage
+        self.images = ImageService(files, storage)
 
     async def get_feed(self, query: FeedQuery, viewer: User | None = None) -> PostPage:
         if query.following and viewer is None:
@@ -97,6 +98,7 @@ class PostService:
         viewer_id = viewer.id if viewer else None
         engagement = await self.repo.engagement([post.id for post in page], viewer_id)
         followed = await self._followed_authors(viewer_id, page)
+        avatars = await self.images.links(p.author.avatar_url for p in page if p.author)
         return PostPage(
             items=await asyncio.gather(
                 *(
@@ -105,6 +107,7 @@ class PostService:
                         viewer,
                         engagement.get(p.id, PostEngagement(0, 0, False)),
                         followed,
+                        avatars=avatars,
                     )
                     for p in page
                 )
@@ -146,8 +149,9 @@ class PostService:
         if await self.repo.get_for_interaction(post_id) is None:
             raise PostNotFoundError(id=post_id)
         rows = await self.repo.comments(post_id, cursor, limit)
+        avatars = await self.images.links(author.avatar_url for _, author in rows[:limit])
         return CommentPage(
-            items=[self._comment(comment, author) for comment, author in rows[:limit]],
+            items=[self._comment(comment, author, avatars) for comment, author in rows[:limit]],
             next_cursor=rows[limit - 1][0].id if len(rows) > limit else None,
         )
 
@@ -162,7 +166,7 @@ class PostService:
             post_id=post_id, author_id=user.id, parent_id=data.parent_id, text=data.text
         )
         await self.repo.add_comment(comment)
-        return self._comment(comment, user)
+        return self._comment(comment, user, await self.images.links([user.avatar_url]))
 
     async def delete_comment(self, post_id: int, comment_id: int, user: User) -> None:
         await self._interaction_post(post_id)
@@ -182,7 +186,7 @@ class PostService:
         return post
 
     @staticmethod
-    def _comment(comment: Comment, author: User) -> CommentOut:
+    def _comment(comment: Comment, author: User, avatars: dict[str, str]) -> CommentOut:
         if comment.is_hidden:
             return CommentOut(
                 id=comment.id,
@@ -199,18 +203,20 @@ class PostService:
             parent_id=comment.parent_id,
             text=comment.text,
             author=AuthorOut(
-                id=author.id, display_name=author.display_name, avatar_url=author.avatar_url
+                id=author.id,
+                display_name=author.display_name,
+                avatar_url=avatars.get(author.avatar_url, author.avatar_url),
             ),
             created_at=comment.created_at,
             is_hidden=False,
         )
 
     async def create(self, data: PostCreate, user: User) -> PostOut:
-        await self._check_fishing_date(data.fishing_date, user)
+        await self._check_fishing_moment(data.fishing_date, data.fishing_time, user)
         await self._check_refs(
             data.spot_id, data.method_id, [c.species_id for c in data.species]
         )
-        files = await self._load_files(data.media)
+        files = await self._load_files(data.media, user)
         source = await self.repo.get_klev_source()
         if source is None:
             raise KlevSourceMissingError
@@ -225,6 +231,7 @@ class PostService:
             bait=data.bait,
             conditions=data.conditions,
             fishing_date=data.fishing_date,
+            fishing_time=data.fishing_time,
             show_spot=data.show_spot,
             show_date=data.show_date,
             media=[
@@ -239,8 +246,15 @@ class PostService:
     async def update(self, post_id: int, data: PostUpdate, user: User) -> PostOut:
         post = await self._own_post(post_id, user)
         sent = data.model_fields_set
-        if "fishing_date" in sent:
-            await self._check_fishing_date(data.fishing_date, user)
+        if "fishing_date" in sent or "fishing_time" in sent:
+            fishing_date = data.fishing_date if "fishing_date" in sent else post.fishing_date
+            fishing_time = data.fishing_time if "fishing_time" in sent else post.fishing_time
+            if "fishing_date" in sent and fishing_date is None and "fishing_time" not in sent:
+                fishing_time = None  # время без даты не бывает: сбрасываем вместе с датой
+            if fishing_time is not None and fishing_date is None:
+                raise InvalidPostError("fishing_time requires fishing_date")
+            await self._check_fishing_moment(fishing_date, fishing_time, user)
+            post.fishing_date, post.fishing_time = fishing_date, fishing_time
         await self._check_refs(
             data.spot_id if "spot_id" in sent else None,
             data.method_id if "method_id" in sent else None,
@@ -251,7 +265,7 @@ class PostService:
                 setattr(post, field, getattr(data, field))
         removed: list[File] = []
         if data.media is not None:
-            removed = await self._replace_media(post, data.media)
+            removed = await self._replace_media(post, data.media, user)
         if data.species is not None:
             self._replace_catches(post, data.species)
         await self.repo.flush()
@@ -277,13 +291,21 @@ class PostService:
         assert post is not None
         return post
 
-    async def _check_fishing_date(self, fishing_date, user: User) -> None:
+    async def _check_fishing_moment(
+        self, fishing_date: date | None, fishing_time: time | None, user: User
+    ) -> None:
         if fishing_date is None:
             return
         city = await self.cities.get(user.city_id)
-        today = datetime.now(ZoneInfo(city.timezone) if city else None).date()
-        if fishing_date > today:
+        now = datetime.now(ZoneInfo(city.timezone) if city else None)
+        if fishing_date > now.date():
             raise InvalidPostError("fishing_date must not be in the future")
+        if (
+            fishing_time is not None
+            and fishing_date == now.date()
+            and fishing_time > now.time()
+        ):
+            raise InvalidPostError("fishing_time must not be in the future")
 
     async def _check_refs(
         self, spot_id: int | None, method_id: int | None, species_ids: list[int]
@@ -298,18 +320,21 @@ class PostService:
                 raise InvalidPostError(f"Species not found: {sorted(missing)}")
 
     async def _load_files(
-        self, keys: list[str], *, except_post_id: int | None = None
+        self, keys: list[str], user: User, *, except_post_id: int | None = None
     ) -> list[File]:
         by_key = {f.key: f for f in await self.files.get_by_keys(keys)}
         missing = [k for k in keys if k not in by_key]
         if missing:
             raise InvalidPostError(f"Files not found: {missing}")
         files = [by_key[k] for k in keys]
+        # Чужой файл прикрепить нельзя, даже если знаешь его key.
+        if any(f.uploaded_by != user.id for f in files):
+            raise InvalidPostError("You can attach only files you uploaded")
         busy = await self.repo.attached_file_ids(
             [f.id for f in files], except_post_id=except_post_id
         )
-        if busy:
-            raise InvalidPostError("Files are already attached to another post")
+        if busy or await self.files.used_as_image([f.key for f in files]):
+            raise InvalidPostError("Files are already in use")
         return files
 
     @staticmethod
@@ -320,8 +345,10 @@ class PostService:
             max_weight_g=data.max_weight_g,
         )
 
-    async def _replace_media(self, post: Post, keys: list[str]) -> list[File]:
-        files = await self._load_files(keys, except_post_id=post.id)
+    async def _replace_media(
+        self, post: Post, keys: list[str], user: User
+    ) -> list[File]:
+        files = await self._load_files(keys, user, except_post_id=post.id)
         current = {m.media_file_id: m for m in post.media}
         media = []
         for index, file in enumerate(files):
@@ -360,12 +387,15 @@ class PostService:
         engagement: PostEngagement | None = None,
         followed: set[int] | None = None,
         reveal: bool = False,
+        avatars: dict[str, str] | None = None,
     ) -> PostOut:
         if engagement is None:
             stats = await self.repo.engagement([post.id], viewer.id if viewer else None)
             engagement = stats.get(post.id, PostEngagement(0, 0, False))
         if followed is None:
             followed = await self._followed_authors(viewer.id if viewer else None, [post])
+        if avatars is None:
+            avatars = await self.images.links([post.author.avatar_url] if post.author else [])
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
@@ -378,6 +408,7 @@ class PostService:
             conditions=post.conditions,
             published_at=post.published_at,
             fishing_date=post.fishing_date if post.show_date or own else None,
+            fishing_time=post.fishing_time if post.show_date or own else None,
             event_date=post.event_date,
             source=SourceOut(
                 id=post.source.id,
@@ -388,7 +419,7 @@ class PostService:
             author=PostAuthorOut(
                 id=post.author.id,
                 display_name=post.author.display_name,
-                avatar_url=post.author.avatar_url,
+                avatar_url=avatars.get(post.author.avatar_url, post.author.avatar_url),
                 is_following=post.author.id in followed,
             )
             if post.author

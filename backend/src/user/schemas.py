@@ -70,7 +70,10 @@ class UserUpdate(BaseModel):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None
     city_id: int | None = None
-    avatar_url: str | None = None
+    avatar_key: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)] | None
+    ) = None
+    """Ключ файла, загруженного через /files/image; null убирает аватар."""
     bio: str | None = None
     role: UserRole | None = None
 

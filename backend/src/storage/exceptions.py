@@ -1,4 +1,4 @@
-from src.exceptions import AppError
+from src.exceptions import AppError, ForbiddenError
 
 
 class StorageError(AppError):
@@ -16,6 +16,10 @@ class FileNotFoundInStorageError(StorageError):
     detail = "File not found"
 
 
+class FileForbiddenError(ForbiddenError):
+    detail = "You can delete only your own files"
+
+
 class UnsupportedFileTypeError(AppError):
     status_code = 415
     detail = "Unsupported file type"
@@ -24,3 +28,8 @@ class UnsupportedFileTypeError(AppError):
 class FileTooLargeError(AppError):
     status_code = 413
     detail = "File is too large"
+
+
+class InvalidImageError(AppError):
+    status_code = 422
+    detail = "Invalid image"
