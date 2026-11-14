@@ -1,9 +1,9 @@
 import asyncio
-import base64
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from src.auth.exceptions import AuthenticationError
 from src.city.repository import CityRepository
 from src.models.media import MediaType, PostMedia
 from src.post.models import Comment, Post, PostKind, PostSpecies, PostStatus, SourceType
@@ -11,7 +11,6 @@ from src.post.exceptions import (
     CommentForbiddenError,
     CommentNotFoundError,
     ImportedPostLikeError,
-    InvalidCursorError,
     InvalidPostError,
     KlevSourceMissingError,
     PostForbiddenError,
@@ -28,6 +27,7 @@ from src.post.schemas import (
     FeedQuery,
     MediaOut,
     MethodRef,
+    PostAuthorOut,
     PostCreate,
     PostOut,
     PostPage,
@@ -42,6 +42,7 @@ from src.storage.exceptions import StorageUnavailableError
 from src.storage.models import File
 from src.storage.repository import FileRepository
 from src.user.models import User, UserRole
+from src.utils import cursor as cursors
 
 logger = logging.getLogger(__name__)
 
@@ -55,20 +56,6 @@ SCALAR_FIELDS = (
     "show_spot",
     "show_date",
 )
-
-
-def encode_cursor(post: Post) -> str:
-    raw = f"{post.published_at.isoformat()}|{post.id}"
-    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
-
-
-def decode_cursor(cursor: str) -> tuple[datetime, int]:
-    try:
-        padded = cursor + "=" * (-len(cursor) % 4)
-        published_at, post_id = base64.urlsafe_b64decode(padded).decode().split("|")
-        return datetime.fromisoformat(published_at), int(post_id)
-    except ValueError as exc:
-        raise InvalidCursorError from exc
 
 
 def _media_type(file: File) -> str:
@@ -94,21 +81,38 @@ class PostService:
         self.storage = storage
 
     async def get_feed(self, query: FeedQuery, viewer: User | None = None) -> PostPage:
-        after = decode_cursor(query.cursor) if query.cursor else None
-        posts = await self.repo.feed(query, after)
+        if query.following and viewer is None:
+            raise AuthenticationError
+        after = cursors.decode(query.cursor) if query.cursor else None
+        posts = await self.repo.feed(query, after, viewer.id if viewer else None)
         page, has_more = posts[: query.limit], len(posts) > query.limit
-        engagement = await self.repo.engagement(
-            [post.id for post in page], viewer.id if viewer else None
-        )
+        viewer_id = viewer.id if viewer else None
+        engagement = await self.repo.engagement([post.id for post in page], viewer_id)
+        followed = await self._followed_authors(viewer_id, page)
         return PostPage(
             items=await asyncio.gather(
                 *(
-                    self._card(p, viewer, engagement.get(p.id, PostEngagement(0, 0, False)))
+                    self._card(
+                        p,
+                        viewer,
+                        engagement.get(p.id, PostEngagement(0, 0, False)),
+                        followed,
+                    )
                     for p in page
                 )
             ),
-            next_cursor=encode_cursor(page[-1]) if has_more else None,
+            next_cursor=cursors.encode(page[-1].published_at, page[-1].id)
+            if has_more
+            else None,
         )
+
+    async def _followed_authors(
+        self, viewer_id: int | None, posts: list[Post]
+    ) -> set[int]:
+        author_ids = {p.author_id for p in posts if p.author_id is not None}
+        if viewer_id is None or not author_ids:
+            return set()
+        return await self.repo.followed_author_ids(viewer_id, list(author_ids))
 
     async def get_post(self, post_id: int, viewer: User | None = None) -> PostOut:
         post = await self.repo.get_visible(post_id)
@@ -335,10 +339,13 @@ class PostService:
         post: Post,
         viewer: User | None = None,
         engagement: PostEngagement | None = None,
+        followed: set[int] | None = None,
     ) -> PostOut:
         if engagement is None:
             stats = await self.repo.engagement([post.id], viewer.id if viewer else None)
             engagement = stats.get(post.id, PostEngagement(0, 0, False))
+        if followed is None:
+            followed = await self._followed_authors(viewer.id if viewer else None, [post])
         urls = await asyncio.gather(
             *(self.storage.presigned_url(m.media_file.key) for m in post.media)
         )
@@ -358,10 +365,11 @@ class PostService:
                 name=post.source.name,
                 url=post.source.url,
             ),
-            author=AuthorOut(
+            author=PostAuthorOut(
                 id=post.author.id,
                 display_name=post.author.display_name,
                 avatar_url=post.author.avatar_url,
+                is_following=post.author.id in followed,
             )
             if post.author
             else None,

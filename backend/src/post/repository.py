@@ -17,7 +17,7 @@ from src.post.models import (
 )
 from src.post.schemas import FeedQuery
 from src.spot.models import Spot
-from src.user.models import User
+from src.user.models import Subscription, User
 
 
 class PostEngagement(NamedTuple):
@@ -55,9 +55,14 @@ class PostRepository:
         )
 
     async def feed(
-        self, query: FeedQuery, after: tuple[datetime, int] | None
+        self,
+        query: FeedQuery,
+        after: tuple[datetime, int] | None,
+        viewer_id: int | None = None,
     ) -> list[Post]:
         stmt = self._visible()
+        # Автору в своей истории видно то, что скрыто от остальных (ТЗ 4.3).
+        own_history = viewer_id is not None and query.author_id == viewer_id
         if query.city_id is not None:
             stmt = stmt.where(
                 func.coalesce(Spot.city_id, User.city_id, Source.city_id)
@@ -65,8 +70,27 @@ class PostRepository:
             )
         if query.source is not None:
             stmt = stmt.where(Source.type == query.source.value)
+        if query.author_id is not None:
+            stmt = stmt.where(Post.author_id == query.author_id)
+        if query.following and viewer_id is not None:
+            stmt = stmt.where(
+                Post.author_id.in_(
+                    select(Subscription.followee_id).where(
+                        Subscription.follower_id == viewer_id
+                    )
+                )
+            )
         if query.spot_id is not None:
-            stmt = stmt.where(Post.spot_id == query.spot_id, Post.show_spot)
+            stmt = stmt.where(Post.spot_id == query.spot_id)
+            if not own_history:
+                stmt = stmt.where(Post.show_spot)
+        if query.date_from is not None or query.date_to is not None:
+            if not own_history:
+                stmt = stmt.where(Post.show_date)
+            if query.date_from is not None:
+                stmt = stmt.where(Post.fishing_date >= query.date_from)
+            if query.date_to is not None:
+                stmt = stmt.where(Post.fishing_date <= query.date_to)
         if query.species_id is not None:
             stmt = stmt.where(
                 exists().where(
@@ -82,6 +106,28 @@ class PostRepository:
             query.limit + 1
         )
         return list(await self.session.scalars(stmt))
+
+    async def followed_author_ids(
+        self, viewer_id: int, author_ids: list[int]
+    ) -> set[int]:
+        result = await self.session.scalars(
+            select(Subscription.followee_id).where(
+                Subscription.follower_id == viewer_id,
+                Subscription.followee_id.in_(author_ids),
+            )
+        )
+        return set(result)
+
+    async def count_by_author(self, author_id: int) -> int:
+        return await self.session.scalar(
+            select(func.count())
+            .select_from(Post)
+            .where(
+                Post.author_id == author_id,
+                Post.status == PostStatus.PUBLISHED.value,
+                Post.canonical_post_id.is_(None),
+            )
+        )
 
     async def get_visible(self, post_id: int) -> Post | None:
         return await self.session.scalar(self._visible().where(Post.id == post_id))
