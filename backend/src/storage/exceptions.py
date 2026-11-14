@@ -1,4 +1,4 @@
-from src.exceptions import AppError
+from src.exceptions import AppError, ForbiddenError
 
 
 class StorageError(AppError):
@@ -14,6 +14,10 @@ class StorageUnavailableError(StorageError):
 class FileNotFoundInStorageError(StorageError):
     status_code = 404
     detail = "File not found"
+
+
+class FileForbiddenError(ForbiddenError):
+    detail = "You can delete only your own files"
 
 
 class UnsupportedFileTypeError(AppError):

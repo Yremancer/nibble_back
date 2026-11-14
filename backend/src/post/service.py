@@ -210,7 +210,7 @@ class PostService:
         await self._check_refs(
             data.spot_id, data.method_id, [c.species_id for c in data.species]
         )
-        files = await self._load_files(data.media)
+        files = await self._load_files(data.media, user)
         source = await self.repo.get_klev_source()
         if source is None:
             raise KlevSourceMissingError
@@ -251,7 +251,7 @@ class PostService:
                 setattr(post, field, getattr(data, field))
         removed: list[File] = []
         if data.media is not None:
-            removed = await self._replace_media(post, data.media)
+            removed = await self._replace_media(post, data.media, user)
         if data.species is not None:
             self._replace_catches(post, data.species)
         await self.repo.flush()
@@ -298,13 +298,16 @@ class PostService:
                 raise InvalidPostError(f"Species not found: {sorted(missing)}")
 
     async def _load_files(
-        self, keys: list[str], *, except_post_id: int | None = None
+        self, keys: list[str], user: User, *, except_post_id: int | None = None
     ) -> list[File]:
         by_key = {f.key: f for f in await self.files.get_by_keys(keys)}
         missing = [k for k in keys if k not in by_key]
         if missing:
             raise InvalidPostError(f"Files not found: {missing}")
         files = [by_key[k] for k in keys]
+        # Чужой файл прикрепить нельзя, даже если знаешь его key.
+        if any(f.uploaded_by != user.id for f in files):
+            raise InvalidPostError("You can attach only files you uploaded")
         busy = await self.repo.attached_file_ids(
             [f.id for f in files], except_post_id=except_post_id
         )
@@ -320,8 +323,10 @@ class PostService:
             max_weight_g=data.max_weight_g,
         )
 
-    async def _replace_media(self, post: Post, keys: list[str]) -> list[File]:
-        files = await self._load_files(keys, except_post_id=post.id)
+    async def _replace_media(
+        self, post: Post, keys: list[str], user: User
+    ) -> list[File]:
+        files = await self._load_files(keys, user, except_post_id=post.id)
         current = {m.media_file_id: m for m in post.media}
         media = []
         for index, file in enumerate(files):
