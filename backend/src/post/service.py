@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from src.auth.exceptions import AuthenticationError
@@ -58,7 +58,6 @@ SCALAR_FIELDS = (
     "text",
     "bait",
     "conditions",
-    "fishing_date",
     "spot_id",
     "method_id",
     "show_spot",
@@ -206,7 +205,7 @@ class PostService:
         )
 
     async def create(self, data: PostCreate, user: User) -> PostOut:
-        await self._check_fishing_date(data.fishing_date, user)
+        await self._check_fishing_moment(data.fishing_date, data.fishing_time, user)
         await self._check_refs(
             data.spot_id, data.method_id, [c.species_id for c in data.species]
         )
@@ -225,6 +224,7 @@ class PostService:
             bait=data.bait,
             conditions=data.conditions,
             fishing_date=data.fishing_date,
+            fishing_time=data.fishing_time,
             show_spot=data.show_spot,
             show_date=data.show_date,
             media=[
@@ -239,8 +239,15 @@ class PostService:
     async def update(self, post_id: int, data: PostUpdate, user: User) -> PostOut:
         post = await self._own_post(post_id, user)
         sent = data.model_fields_set
-        if "fishing_date" in sent:
-            await self._check_fishing_date(data.fishing_date, user)
+        if "fishing_date" in sent or "fishing_time" in sent:
+            fishing_date = data.fishing_date if "fishing_date" in sent else post.fishing_date
+            fishing_time = data.fishing_time if "fishing_time" in sent else post.fishing_time
+            if "fishing_date" in sent and fishing_date is None and "fishing_time" not in sent:
+                fishing_time = None  # время без даты не бывает: сбрасываем вместе с датой
+            if fishing_time is not None and fishing_date is None:
+                raise InvalidPostError("fishing_time requires fishing_date")
+            await self._check_fishing_moment(fishing_date, fishing_time, user)
+            post.fishing_date, post.fishing_time = fishing_date, fishing_time
         await self._check_refs(
             data.spot_id if "spot_id" in sent else None,
             data.method_id if "method_id" in sent else None,
@@ -277,13 +284,21 @@ class PostService:
         assert post is not None
         return post
 
-    async def _check_fishing_date(self, fishing_date, user: User) -> None:
+    async def _check_fishing_moment(
+        self, fishing_date: date | None, fishing_time: time | None, user: User
+    ) -> None:
         if fishing_date is None:
             return
         city = await self.cities.get(user.city_id)
-        today = datetime.now(ZoneInfo(city.timezone) if city else None).date()
-        if fishing_date > today:
+        now = datetime.now(ZoneInfo(city.timezone) if city else None)
+        if fishing_date > now.date():
             raise InvalidPostError("fishing_date must not be in the future")
+        if (
+            fishing_time is not None
+            and fishing_date == now.date()
+            and fishing_time > now.time()
+        ):
+            raise InvalidPostError("fishing_time must not be in the future")
 
     async def _check_refs(
         self, spot_id: int | None, method_id: int | None, species_ids: list[int]
@@ -383,6 +398,7 @@ class PostService:
             conditions=post.conditions,
             published_at=post.published_at,
             fishing_date=post.fishing_date if post.show_date or own else None,
+            fishing_time=post.fishing_time if post.show_date or own else None,
             event_date=post.event_date,
             source=SourceOut(
                 id=post.source.id,
