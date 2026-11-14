@@ -168,3 +168,7 @@ class Comment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean, server_default=sql_text("false")
+    )
+    """Скрыт модератором: в ленте остаётся заглушка, чтобы не рвать ветку ответов."""
