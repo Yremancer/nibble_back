@@ -1,4 +1,6 @@
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_TYPE = "access"
-JWT_REQUIRED_CLAIMS = ("sub", "iat", "exp", "type")
+JWT_REQUIRED_CLAIMS = ("sub", "sid", "iat", "exp", "type")
 JWT_SECRET_MIN_LENGTH = 32
+REFRESH_TOKEN_BYTES = 32
+REFRESH_COOKIE_PATH = "/auth"
